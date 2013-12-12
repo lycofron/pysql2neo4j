@@ -16,6 +16,7 @@ from py2neo import neo4j
 class SourceDb:
     @classmethod
     def getSqlAlchemyConnectionString(cls):
+        # TODO implement
         ''' Return a string in for of:
         dialect+driver://user:password@host/dbname[?key=value..]
         '''
@@ -38,6 +39,9 @@ class ParseConfig(object):
         SourceDb.password = config.get("SOURCE_DB","pass")
 
 def getTestedSQLDatabase(dburi,tryWrite=False):
+    '''Gets an sqlalchemy db uri and returns a triplet of engine, connection and inspector
+       after testing adequately that the database is functional. If tryWrite is True, it will
+       test for table creation, insert, update and delete.'''
     try:
         engine = create_engine(dburi)
         conn = engine.connect()
@@ -78,7 +82,41 @@ def getTestedSQLDatabase(dburi,tryWrite=False):
             raise DBInsufficientPrivileges("Exception while testing trivial operations in DB %s." % dburi)
     return engine, conn, insp
 
+    def getTestedNeo4jDB(graphDBurl):
+        '''Gets a Neo4j url and returns a GraphDatabaseService to the database
+        after having performed a few tests (connection, creation of nodes, creation of batch)
+        '''
+        try:
+            graph_db = neo4j.GraphDatabaseService(self.graphDbConnectionString)
+        except Exception as ex:
+            raise DBUnreadableException(ex,"Could not connect to graph database.")
+        
+        try:
+            q = neo4j.CypherQuery(graph_db,"start n=node(*) where ID(n)>0 return count(n);")
+            r,_ = q.execute()
+            if r[0][0]>0:
+                raise WorkflowException(Exception(),"Graph Database is not empty.")
+        except Exception as ex:
+            raise DBInsufficientPrivileges(ex,"Could not execute query to graph database.")
+        
+        try:
+            test_node = graph_db.create({"data":"whatever"})[0]
+            fetched = graph_db.node(test_node.id)
+            fetched.delete()
+        except Exception as ex:
+            raise DBInsufficientPrivileges(ex,"Could not execute simple operations to graph database.")
+        
+        try:
+            batch = neo4j.WriteBatch(graph_db)
+        except Exception as ex:
+            raise DBInsufficientPrivileges(ex,"Could not get WriteBatch from graph database.")
+            
+
+        return graph_db
+
 class DBConnManager(object):
+    ## Yes, indeed, these vars right below have no place here. 
+    ## They were put there just for testing purposes and are to be removed ASAP.
     sourcedb="mysql+mysqldb://worlduser:123456@127.0.0.1/worlddb?charset=utf8"
     tempdb="mysql+mysqldb://worlduser:123456@127.0.0.1/mig?charset=utf8"
     graphDbConnectionString = "http://localhost:7474/db/data/"
@@ -88,39 +126,6 @@ class DBConnManager(object):
         self.srcengine, self.srcconn, self.srcinsp = getTestedSQLDatabase(self.sourcedb)        
         # Get a temp db to work with intermediate data
         self.tmpengine, self.tmpconn, self.tmpinsp = getTestedSQLDatabase(self.tempdb)        
-        self._test_graphdb()
+        self.destGraphDb = getTestedNeo4jDB(graphDbConnectionString)
         
             
-    def _test_graphdb(self):
-        try:
-            graph_db = neo4j.GraphDatabaseService(self.graphDbConnectionString)
-        except Exception as ex:
-            print "Could not connect to graph database. Error:\n" + ex.message
-            raise
-        
-        try:
-            q = neo4j.CypherQuery(graph_db,"start n=node(*) where ID(n)>0 return count(n);")
-            r,_ = q.execute()
-            if r[0][0]>0:
-                print "Graph Database is not empty."
-        except Exception as ex:
-            print "Could not execute query to graph database. Error:\n" + ex.message
-            raise
-        
-        try:
-            test_node = graph_db.create({"data":"whatever"})[0]
-            fetched = graph_db.node(test_node.id)
-            fetched.delete()
-        except Exception as ex:
-            print "Could not execute simple operations to graph database. Error:\n" + ex.message
-            raise
-        
-        try:
-            batch = neo4j.WriteBatch(graph_db)
-        except Exception as ex:
-            print "Could not get WriteBatch from graph database. Error:\n" + ex.message
-            raise
-            
-
-        self.graph_db = graph_db
-        self.writeBatch = batch

@@ -4,6 +4,8 @@ Created on 24 Apr 2013
 @author: theodojo
 '''
 
+##Yeah, this has nothing to do with the rest of the code, this is just a code testing playground.
+
 from sqlalchemy import create_engine, MetaData, Table, select
 from sqlalchemy.engine import reflection
 from py2neo import node, rel
