@@ -3,6 +3,8 @@ pysql2neo4j
 
 This is another take on the idea of a generic tool to migrate an SQL database to the Neo4j graph database, this time taking advantage of sqlalchemy.
 
+* WORK IN PROGRESS - DOES NOT WORK YET *
+
 Description
 -----------
 
