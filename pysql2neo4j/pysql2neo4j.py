@@ -11,20 +11,29 @@ from sqlalchemy.schema import ForeignKeyConstraint
 
 from configman import DBConnManager
 
+class SrcDBProcessor(object):
+    def __init__(self):
+        wrkDB = DBConnManager()
+        self.insp = reflection.Inspector.from_engine(wrkDB.srcengine)
+
+    def iterTables(self):
+        for t in insp.get_table_names():
+            meta = MetaData()
+            yield TableProcessor(Table(t,meta))
+
 class TableProcessor(object):
     
     def __init__(self,saTableMetadata):
         wrkDB = DBConnManager()
         wrkDB.srcinsp.reflecttable(saTableMetadata,None)
-        s = select([saTableMetadata])
-        tname = saTableMetadata.name
-        self._result = wrkDB.srcconn.execute(s)
-        cols = set([x["name"] for x in wrkDB.srcinsp.get_columns(tname)])
+        self.query = select([saTableMetadata])
+        self.tablename = saTableMetadata.name
+        self.allcols = set([x["name"] for x in wrkDB.srcinsp.get_columns(tname)])
         self.pkeycols = set(wrkDB.srcinsp.get_pk_constraint(tname)["constrained_columns"])
-        self.fKeysCols = [x.columns for x in saTableMetadata.constraints if type(x)==ForeignKeyConstraint]
-        fkeycols = set()
-        for x in self.fKeysCols:
-            fkeycols = fkeycols | set(x)
-        self.essCols = cols - fkeycols
+        self.fKeysCols = set([x.columns for x in saTableMetadata.constraints if type(x)==ForeignKeyConstraint])
+        self.essCols = self.allcols - self.fKeysCols
 
+    def iterRows(self):
+        for r in wrkDB.srcconn.execute(self.query):
+            yield r
         

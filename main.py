@@ -10,40 +10,34 @@ from sqlalchemy import create_engine, MetaData, Table, select
 from sqlalchemy.engine import reflection
 from py2neo import node, rel
 from py2neo import neo4j
+from pysql2neo4j.pysql2neo4j import SrcDBProcessor
 
-
-sourcedb="mysql+mysqldb://worlduser:123456@127.0.0.1/worlddb?charset=utf8"
+sourcedb="mysql+mysqlconnector://worlduser:123456@127.0.0.1/world?charset=utf8"
 graph_db = neo4j.GraphDatabaseService("http://localhost:7474/db/data/")
 
 if __name__ == '__main__':
-    engine = create_engine(sourcedb)
-    conn = engine.connect()
-    insp = reflection.Inspector.from_engine(engine)
-    meta = MetaData()
-    batch = neo4j.WriteBatch(graph_db)
+#    batch = neo4j.WriteBatch(graph_db)
     cmdCount=0
     cmdCountCycle=1000
     cmdCountTotal=0
     
     #Phase 1: Create Nodes
-    for t in insp.get_table_names():
-        print t
+    for t in SrcDBProcessor().iterTables():
+        print t.tablename
         cmdCount=cmdCount+1
-        cols = set([x["name"] for x in insp.get_columns(t)])
-        pkeycols = set(insp.get_pk_constraint(t)["constrained_columns"])
-        curTable = Table(t,meta)
-        insp.reflecttable(curTable,None)
-        s = select([curTable])
-        result = conn.execute(s)
-        for row in result:
-            mainNodeData={"table":t}
-            for c in cols: mainNodeData[c]=row[c]
-            batch.create(mainNodeData)
+        for row in t.iterRows():
+            mainNodeData={}
+            for c in t.esscols: mainNodeData[c]=row[c]
+#            n=batch.create(mainNodeData)
+#            batch.add_labels(n,t)
             cmdCount=cmdCount+1
             if cmdCount > cmdCountCycle:
-                batch.submit()
+#                batch.submit()
                 cmdCountTotal = cmdCountTotal + cmdCount
                 cmdCount = 0
                 print "Sent %d commands." % cmdCountTotal
         if cmdCount>0:
-            batch.submit()
+#            batch.submit()
+            print "Sent %d leftover commands." % cmdCount
+    print "Total %d commands sent." % cmdCountTotal
+    print "Terminated"

@@ -11,6 +11,7 @@ from sqlalchemy.engine import reflection
 from sqlalchemy import Table, Column, Integer
 from customexceptions import *
 
+
 from py2neo import neo4j
 
 class SourceDb:
@@ -45,14 +46,15 @@ def getTestedSQLDatabase(dburi,tryWrite=False):
     try:
         engine = create_engine(dburi)
         conn = engine.connect()
-        insp = reflection.Inspector.from_engine(dburi)
+        insp = reflection.Inspector.from_engine(engine)
     except Exception as ex:
         raise DbNotFoundException(ex,"Could not connect to DB %s." % dburi)
     try:
         meta = MetaData()
+        meta.reflect(bind=engine)
         sampleTblName=insp.get_table_names()[0]
         sampleTbl = Table(sampleTblName,meta)
-        insp.reflecttable(sampleTbl,None)
+        #insp.reflecttable(sampleTbl,None)
         s=select([sampleTbl])
         result=conn.execute(s)
         _=result.fetchone()
@@ -117,7 +119,7 @@ def getTestedSQLDatabase(dburi,tryWrite=False):
 class DBConnManager(object):
     ## Yes, indeed, these vars right below have no place here. 
     ## They were put there just for testing purposes and are to be removed ASAP.
-    sourcedb="mysql+mysqldb://worlduser:123456@127.0.0.1/worlddb?charset=utf8"
+    sourcedb="mysql+mysqlconnector://worlduser:123456@127.0.0.1/world?charset=utf8"
     tempdb="mysql+mysqldb://worlduser:123456@127.0.0.1/mig?charset=utf8"
     graphDbConnectionString = "http://localhost:7474/db/data/"
     
