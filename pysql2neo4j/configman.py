@@ -11,7 +11,8 @@ from sqlalchemy.engine import reflection
 from sqlalchemy import Table, Column, Integer
 from customexceptions import *
 
-from py2neo import Graph, Node
+from py2neo import Node
+from graph import GraphExt
 
 class SourceDb:
     @classmethod
@@ -88,7 +89,7 @@ def getTestedNeo4jDB(graphDBurl):
     after having performed a few tests (connection, creation of nodes, creation of batch)
     '''
     try:
-        graph_db = Graph(graphDBurl)
+        graph_db = GraphExt(graphDBurl)
     except Exception as ex:
         raise DBUnreadableException(ex,"Could not connect to graph database.")
     

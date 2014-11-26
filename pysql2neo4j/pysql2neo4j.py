@@ -3,7 +3,6 @@ Created on 04 May 2013
 
 @author: theodojo
 '''
-
 from sqlalchemy import select, MetaData ,create_engine, Table 
 from sqlalchemy.engine import reflection
 from sqlalchemy.schema import ForeignKeyConstraint
@@ -69,5 +68,6 @@ class ForeignKeyProcessor(object):
         refTablesAll=[t for t in dbContext if t.tablename==refTablesAllNames[0]]
         assert len(refTablesAll)==1
         self.refTable = refTablesAll[0]
-        self.cols = foreignKeyConstraint.columns
-        
+        self.cols = []
+        for i in zip(foreignKeyConstraint.columns,[elem.column.name for elem in foreignKeyConstraint.elements]):
+            self.cols.append({"referencing":i[0],"referenced":i[1]})

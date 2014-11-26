@@ -10,18 +10,24 @@ import string
 from sqlalchemy import create_engine, MetaData, Table, select
 from sqlalchemy.engine import reflection
 from py2neo import Node, Relationship
-from py2neo import Graph
 from py2neo.cypher import cypher_escape
 from pysql2neo4j.pysql2neo4j import SqlDbProcessor
+from pysql2neo4j.graph import GraphExt 
+
+### Detailed output
+# from py2neo import watch
+# watch("httpstream")
+
 
 #sourcedb="mysql+mysqlconnector://sakilauser:123456@127.0.0.1/sakila?charset=utf8"
-graph_db = Graph("http://localhost:7474/db/data/")
+graph_db = GraphExt("http://localhost:7474/db/data/")
 
 if __name__ == '__main__':
     cmdCount=0
     cmdCountCycle=150
     cmdCountTotal=0
     nodeList=[]
+    nodeQueryLimit=1000
     
     #Phase 1: Create Nodes with their primary keys
     for t in SqlDbProcessor().iterTables:
@@ -34,9 +40,9 @@ if __name__ == '__main__':
             for c in t.allcols: mainNodeData[c]=row[c]
             n=Node(tblLabel,**mainNodeData)
             nodeList.append(n)
-               
+                
             cmdCount=cmdCount+1
-               
+                
             if cmdCount >= cmdCountCycle:
                 try:
                     graph_db.create(*nodeList)
@@ -61,29 +67,41 @@ if __name__ == '__main__':
     for t in SqlDbProcessor().iterTables:
         if t.foreignKeys:
             print "Processing %s." % t.tablename
-            for node in graph_db.find(label=t.tablename):
-                for fk in t.foreignKeys:
-                    conditions = string.join(["%s:%s" % (col, node[col]) for col in fk.cols if node[col]],",")
-                    if not conditions: continue
-                    cypher_query = "match (n:%s{%s}) return n;" % (fk.refTable.tablename,conditions)
-                    records = graph_db.cypher.execute(cypher_query)
-                    subgraph = records.to_subgraph()
-                    assert len(subgraph.nodes)==1
-                    targetNode = next(iter(subgraph.nodes))
-                    relList.append(Relationship(node,t.tablename + "_RL_" + fk.refTable.tablename,targetNode))
-                    cmdCount=cmdCount+1
-                      
-                    if cmdCount >= cmdCountCycle:
+            fksProcessing = 0
+            queryNodes=True
+            skipNodes=0
+            while queryNodes:
+                queryNodes=False
+                for node in graph_db.graphSearch(label=t.tablename,limit=nodeQueryLimit,skip=skipNodes):
+                    queryNodes=True
+                    for fk in t.foreignKeys:
+                        properties={}
+                        for colPair in fk.cols:
+                            if node[colPair["referencing"]] is not None:
+                                properties[colPair["referenced"]]=node[colPair["referencing"]]
+                        if not properties: continue
                         try:
-                            graph_db.create(*relList)
-                            relList=[]
+                            subgraph = [n for n in graph_db.graphSearch(properties=properties,label=fk.refTable.tablename,limit=1)]
+                            assert len(subgraph)==1
+                            targetNode = subgraph[0]
+                            relList.append(Relationship(node,t.tablename + "_RL_" + fk.refTable.tablename,targetNode))
+                            cmdCount=cmdCount+1
                         except Exception as ex:
                             print relList
                             print ex.message
                             sys.exit(-1)
-                        cmdCountTotal = cmdCountTotal + cmdCount
-                        cmdCount = 0
-                        print "Sent %d commands." % cmdCountTotal
+                        if cmdCount >= cmdCountCycle:
+                            try:
+                                graph_db.create(*relList)
+                                relList=[]
+                            except Exception as ex:
+                                print relList
+                                print ex.message
+                                sys.exit(-1)
+                            cmdCountTotal = cmdCountTotal + cmdCount
+                            cmdCount = 0
+                            print "Sent %d commands." % cmdCountTotal
+                skipNodes += nodeQueryLimit
         else:
             print "Skipping %s..." % t.tablename
     if cmdCount>0:
@@ -93,3 +111,4 @@ if __name__ == '__main__':
 
     print "Total %d commands sent." % cmdCountTotal
     print "Terminated"
+    
