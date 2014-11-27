@@ -12,7 +12,8 @@ from sqlalchemy import Table, Column, Integer
 from customexceptions import *
 
 from py2neo import Node
-from graph import GraphExt
+from graph import GraphProc
+
 
 class SourceDb:
     @classmethod
@@ -23,6 +24,7 @@ class SourceDb:
         '''
         return None
 
+
 class ParseConfig(object):
     '''
     Read settings.ini and provide simple objects with configuration values
@@ -32,14 +34,15 @@ class ParseConfig(object):
     def __init__(self):
         config = ConfigParser.RawConfigParser()
         config.read('settings.ini')
-        SourceDb.rdbms = config.get("SOURCE_DB","rdbms")
-        SourceDb.driver = config.get("SOURCE_DB","driver")
-        SourceDb.host = config.get("SOURCE_DB","host")
-        SourceDb.schema = config.get("SOURCE_DB","schema")
-        SourceDb.user = config.get("SOURCE_DB","user")
-        SourceDb.password = config.get("SOURCE_DB","pass")
+        SourceDb.rdbms = config.get("SOURCE_DB", "rdbms")
+        SourceDb.driver = config.get("SOURCE_DB", "driver")
+        SourceDb.host = config.get("SOURCE_DB", "host")
+        SourceDb.schema = config.get("SOURCE_DB", "schema")
+        SourceDb.user = config.get("SOURCE_DB", "user")
+        SourceDb.password = config.get("SOURCE_DB", "pass")
 
-def getTestedSQLDatabase(dburi,tryWrite=False):
+
+def getTestedSQLDatabase(dburi, tryWrite=False):
     '''Gets an sqlalchemy db uri and returns a triplet of engine, connection and inspector
        after testing adequately that the database is functional. If tryWrite is True, it will
        test for table creation, insert, update and delete.'''
@@ -48,18 +51,18 @@ def getTestedSQLDatabase(dburi,tryWrite=False):
         conn = engine.connect()
         insp = reflection.Inspector.from_engine(engine)
     except Exception as ex:
-        raise DbNotFoundException(ex,"Could not connect to DB %s." % dburi)
+        raise DbNotFoundException(ex, "Could not connect to DB %s." % dburi)
     try:
         meta = MetaData()
         meta.reflect(bind=engine)
-        sampleTblName=insp.get_table_names()[0]
-        sampleTbl = Table(sampleTblName,meta)
+        sampleTblName = insp.get_table_names()[0]
+        sampleTbl = Table(sampleTblName, meta)
         #insp.reflecttable(sampleTbl,None)
-        s=select([sampleTbl])
-        result=conn.execute(s)
-        _=result.fetchone()
+        s = select([sampleTbl])
+        result = conn.execute(s)
+        _ = result.fetchone()
     except Exception as ex:
-        raise  DBUnreadableException(ex,"Could not SELECT on DB %s." % dburi)
+        raise  DBUnreadableException(ex, "Could not SELECT on DB %s." % dburi)
     if tryWrite:
         if insp.get_table_names():
             raise WorkflowException("DB %s is not empty." % dburi)
@@ -69,8 +72,8 @@ def getTestedSQLDatabase(dburi,tryWrite=False):
             testTable = Table('example', md, Column('id', Integer, primary_key=True))
             md.create_all(engine)
         except Exception as ex:
-            raise DBInsufficientPrivileges(ex,"Failed to create table in DB %s ." % dburi)
-        
+            raise DBInsufficientPrivileges(ex, "Failed to create table in DB %s ." % dburi)
+
         try:
             ins = testTable.insert().values(id=1)
             _ = conn.execute(ins)
@@ -81,49 +84,51 @@ def getTestedSQLDatabase(dburi,tryWrite=False):
             conn.execute(testTable.delete())
             testTable.drop(bind=engine)
         except Exception as ex:
-            raise DBInsufficientPrivileges("Exception while testing trivial operations in DB %s." % dburi)
+            raise DBInsufficientPrivileges("Exception while testing trivial operations in DB %s."
+                                           % dburi)
     return engine, conn, insp
+
 
 def getTestedNeo4jDB(graphDBurl):
     '''Gets a Neo4j url and returns a GraphDatabaseService to the database
     after having performed a few tests (connection, creation of nodes, creation of batch)
     '''
     try:
-        graph_db = GraphExt(graphDBurl)
+        graphProc = GraphProc(graphDBurl)
+        graphDb = graphProc.graphDb
     except Exception as ex:
-        raise DBUnreadableException(ex,"Could not connect to graph database.")
-    
+        raise DBUnreadableException(ex, "Could not connect to graph database.")
+
 #     try:
 #         r = graph_db.cypher.execute("start n=node(*) return count(n) as nodecount;")
 #         if r.records[0].nodecount>0:
 #             raise WorkflowException(Exception(),"Graph Database is not empty.")
 #     except Exception as ex:
 #         raise DBInsufficientPrivileges(ex,"Could not execute query to graph database.")
-    
+
     try:
         test_node = Node("TEST", data="whatever")
-        graph_db.create(test_node)
-        graph_db.delete(test_node)
+        graphDb.create(test_node)
+        graphDb.delete(test_node)
     except Exception as ex:
-        raise DBInsufficientPrivileges(ex,"Could not execute simple operations to graph database.")
-    
+        raise DBInsufficientPrivileges(ex,
+            "Could not execute simple operations to graph database.")
+
 #     try:
 #         batch = neo4j.WriteBatch(graph_db)
 #     except Exception as ex:
 #         raise DBInsufficientPrivileges(ex,"Could not get WriteBatch from graph database.")
-        
 
-    return graph_db
+    return graphDb
+
 
 class DBConnManager(object):
-    ## Yes, indeed, these vars right below have no place here. 
-    ## They were put there just for testing purposes and are to be removed ASAP.
-    sourcedb="mysql+mysqlconnector://sakilauser:123456@127.0.0.1/sakila?charset=utf8"
+    ## Yes, indeed, these vars right below have no place here.
+    ## They were put there just for testing purposes and are to be removed ASAP
+    sourcedb = "mysql+mysqlconnector://sakilauser:123456@127.0.0.1/sakila?charset=utf8"
     graphDbConnectionString = "http://localhost:7474/db/data/"
-    
+
     def __init__(self):
         # Get source database and test it
-        self.srcengine, self.srcconn, self.srcinsp = getTestedSQLDatabase(self.sourcedb)        
+        self.srcengine, self.srcconn, self.srcinsp = getTestedSQLDatabase(self.sourcedb)
         self.destGraphDb = getTestedNeo4jDB(self.graphDbConnectionString)
-        
-            

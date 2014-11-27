@@ -4,7 +4,9 @@ Created on 04 May 2013
 @author: theodojo
 '''
 
-from itertools import count
 
-class NodeSequence(object):
-    next=count(0).next()
+def listUnique(seq):
+    '''Unique items in list, preserving order'''
+    seen = set()
+    seen_add = seen.add
+    return [x for x in seq if not (x in seen or seen_add(x))]
