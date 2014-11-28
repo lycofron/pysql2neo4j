@@ -5,130 +5,74 @@ Created on 24 Apr 2013
 '''
 
 import ConfigParser
-from sqlalchemy import create_engine, MetaData, select
-from sqlalchemy.engine import reflection
-#from sqlalchemy.schema import ForeignKeyConstraint
-from sqlalchemy import Table, Column, Integer
-from customexceptions import *
-
-from py2neo import Node
-from graph import GraphProc
+from sqlalchemy.engine import url
+from urlparse import urlunparse
 
 
-class SourceDb:
-    @classmethod
-    def getSqlAlchemyConnectionString(cls):
-        # TODO implement
-        ''' Return a string in for of:
-        dialect+driver://user:password@host/dbname[?key=value..]
-        '''
-        return None
-
-
-class ParseConfig(object):
+class Config(object):
     '''
     Read settings.ini and provide simple objects with configuration values
     '''
-    configFile = "settings.ini"
+    CONFIGFILE = "settings.ini"
+    GLOBALSECTION = 'GLOBAL'
+    SQLDBSECTION = 'SQL_DB'
+    GRAPHDBSECTION = 'GRAPH_DB'
+    STANDARD_OPTIONS = ["driver", "host", "port", "schema", "user", "password"]
 
     def __init__(self):
-        config = ConfigParser.RawConfigParser()
-        config.read('settings.ini')
-        SourceDb.rdbms = config.get("SOURCE_DB", "rdbms")
-        SourceDb.driver = config.get("SOURCE_DB", "driver")
-        SourceDb.host = config.get("SOURCE_DB", "host")
-        SourceDb.schema = config.get("SOURCE_DB", "schema")
-        SourceDb.user = config.get("SOURCE_DB", "user")
-        SourceDb.password = config.get("SOURCE_DB", "pass")
+        self.__config = ConfigParser.RawConfigParser()
+        self.__config.read(self.CONFIGFILE)
+        globalOptions = [x for x in self.__config.items(self.GLOBALSECTION)]
+        self.globals = {k: v for k, v in globalOptions}
 
-
-def getTestedSQLDatabase(dburi, tryWrite=False):
-    '''Gets an sqlalchemy db uri and returns a triplet of engine, connection and inspector
-       after testing adequately that the database is functional. If tryWrite is True, it will
-       test for table creation, insert, update and delete.'''
-    try:
-        engine = create_engine(dburi)
-        conn = engine.connect()
-        insp = reflection.Inspector.from_engine(engine)
-    except Exception as ex:
-        raise DbNotFoundException(ex, "Could not connect to DB %s." % dburi)
-    try:
-        meta = MetaData()
-        meta.reflect(bind=engine)
-        sampleTblName = insp.get_table_names()[0]
-        sampleTbl = Table(sampleTblName, meta)
-        #insp.reflecttable(sampleTbl,None)
-        s = select([sampleTbl])
-        result = conn.execute(s)
-        _ = result.fetchone()
-    except Exception as ex:
-        raise  DBUnreadableException(ex, "Could not SELECT on DB %s." % dburi)
-    if tryWrite:
-        if insp.get_table_names():
-            raise WorkflowException("DB %s is not empty." % dburi)
-
+    def getSqlDbUri(self):
+        driver = self.__config.get(self.SQLDBSECTION, "driver")
+        host = self.__config.get(self.SQLDBSECTION, "host")
         try:
-            md = MetaData()
-            testTable = Table('example', md, Column('id', Integer, primary_key=True))
-            md.create_all(engine)
-        except Exception as ex:
-            raise DBInsufficientPrivileges(ex, "Failed to create table in DB %s ." % dburi)
+            port = self.__config.get(self.SQLDBSECTION, "port")
+        except:
+            port = None
+        schema = self.__config.get(self.SQLDBSECTION, "schema")
+        user = self.__config.get(self.SQLDBSECTION, "user")
+        password = self.__config.get(self.SQLDBSECTION, "password")
+        otherOptions = [x for x in self.__config.items(self.SQLDBSECTION)
+                        if x[0] not in self.STANDARD_OPTIONS]
+        query = {k: v for (k, v) in otherOptions}
+        return url.URL(driver, username=user, password=password,
+                       host=host, port=port, database=schema, query=query)
 
+    def __getGraphNetLoc(self):
         try:
-            ins = testTable.insert().values(id=1)
-            _ = conn.execute(ins)
-            s = select([testTable])
-            _ = conn.execute(s)
-            stmt = testTable.update().values(id=2)
-            conn.execute(stmt)
-            conn.execute(testTable.delete())
-            testTable.drop(bind=engine)
-        except Exception as ex:
-            raise DBInsufficientPrivileges("Exception while testing trivial operations in DB %s."
-                                           % dburi)
-    return engine, conn, insp
+            host = self.__config.get(self.GRAPHDBSECTION, "host")
+        except:
+            host = "localhost"
+        try:
+            port = self.__config.get(self.GRAPHDBSECTION, "port")
+        except:
+            port = 7474
+        return "%s:%s" % (host, port)
 
+    def getGraphDBUri(self):
+        protocol = "http"
+        netLoc = self.__getGraphNetLoc()
+        try:
+            path = self.__config.get(self.GRAPHDBSECTION, "path")
+        except:
+            path = "db/data/"
+        urlComponents = (protocol, netLoc, path, "", "", "")
+        return urlunparse(urlComponents)
 
-def getTestedNeo4jDB(graphDBurl):
-    '''Gets a Neo4j url and returns a GraphDatabaseService to the database
-    after having performed a few tests (connection, creation of nodes, creation of batch)
-    '''
-    try:
-        graphProc = GraphProc(graphDBurl)
-        graphDb = graphProc.graphDb
-    except Exception as ex:
-        raise DBUnreadableException(ex, "Could not connect to graph database.")
-
-#     try:
-#         r = graph_db.cypher.execute("start n=node(*) return count(n) as nodecount;")
-#         if r.records[0].nodecount>0:
-#             raise WorkflowException(Exception(),"Graph Database is not empty.")
-#     except Exception as ex:
-#         raise DBInsufficientPrivileges(ex,"Could not execute query to graph database.")
-
-    try:
-        test_node = Node("TEST", data="whatever")
-        graphDb.create(test_node)
-        graphDb.delete(test_node)
-    except Exception as ex:
-        raise DBInsufficientPrivileges(ex,
-            "Could not execute simple operations to graph database.")
-
-#     try:
-#         batch = neo4j.WriteBatch(graph_db)
-#     except Exception as ex:
-#         raise DBInsufficientPrivileges(ex,"Could not get WriteBatch from graph database.")
-
-    return graphDb
-
-
-class DBConnManager(object):
-    ## Yes, indeed, these vars right below have no place here.
-    ## They were put there just for testing purposes and are to be removed ASAP
-    sourcedb = "mysql+mysqlconnector://sakilauser:123456@127.0.0.1/sakila?charset=utf8"
-    graphDbConnectionString = "http://localhost:7474/db/data/"
-
-    def __init__(self):
-        # Get source database and test it
-        self.srcengine, self.srcconn, self.srcinsp = getTestedSQLDatabase(self.sourcedb)
-        self.destGraphDb = getTestedNeo4jDB(self.graphDbConnectionString)
+    def getGraphDBCredentials(self):
+        netLoc = self.__getGraphNetLoc()
+        try:
+            user = self.__config.get(self.GRAPHDBSECTION, "user")
+        except:
+            user = None
+        try:
+            password = self.__config.get(self.GRAPHDBSECTION, "password")
+        except:
+            password = None
+        if user and password:
+            return (netLoc, user, password)
+        else:
+            return None

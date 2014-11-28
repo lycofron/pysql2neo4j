@@ -1,11 +1,17 @@
 import string
-from py2neo import Graph
+from py2neo import Graph, authenticate
+from py2neo import Node
+from customexceptions import DBUnreadableException, DBInsufficientPrivileges
+from configman import Config
 
 
 class GraphProc(object):
 
-    def __init__(self, graphUri):
-        self.graphDb = Graph(graphUri)
+    def __init__(self):
+        config = Config()
+        graphDbUrl = config.getGraphDBUri()
+        graphDbCredentials = config.getGraphDBCredentials()
+        self.graphDb = getTestedNeo4jDB(graphDbUrl, graphDbCredentials)
 
 #     def graphSearch(self, label, properties=None, limit=None, skip=None, orderBy=None):
 #         """ Modified from py2neo.core.Graph.find method: find all nodes matching given criteria.
@@ -68,3 +74,24 @@ class GraphProc(object):
                 statement = "create index on :%s(%s)" % (tableObj.tablename,
                                                          col)
                 self.graphDb.cypher.run(statement)
+
+
+def getTestedNeo4jDB(graphDBurl, graphDbCredentials):
+    '''Gets a Neo4j url and returns a GraphDatabaseService to the database
+    after having performed some trivial tests'''
+    try:
+        if graphDbCredentials:
+            authenticate(*graphDbCredentials)
+        graphDb = Graph(graphDBurl)
+    except Exception as ex:
+        raise DBUnreadableException(ex, "Could not connect to graphDb database.")
+
+    try:
+        test_node = Node("TEST", data="whatever")
+        graphDb.create(test_node)
+        graphDb.delete(test_node)
+    except Exception as ex:
+        raise DBInsufficientPrivileges(ex,
+            "Could not execute simple operations to graphDb database.")
+
+    return graphDb

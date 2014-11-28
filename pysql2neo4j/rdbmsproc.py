@@ -3,32 +3,28 @@ Created on 04 May 2013
 
 @author: theodojo
 '''
-from sqlalchemy import select, MetaData, Table
-from sqlalchemy.engine import reflection
 from sqlalchemy.schema import ForeignKeyConstraint
+from sqlalchemy import create_engine, MetaData, select
+from sqlalchemy.engine import reflection
+from sqlalchemy import Table, Column, Integer
 
-from configman import DBConnManager
+from configman import Config
 from csvproc import CsvHandler
 from utils import listUnique
+from customexceptions import DBInsufficientPrivileges, DbNotFoundException
+from customexceptions import DBUnreadableException, WorkflowException
 
 
-class SqlDbProcessor(object):
+class SqlDbInfo(object):
     def __init__(self):
-        wrkDB = DBConnManager()
-        self.insp = reflection.Inspector.from_engine(wrkDB.srcengine)
+        config = Config()
+        sqldburi = config.getSqlDbUri()
+        connection, inspector = getTestedSQLDatabase(sqldburi)
         allTables = list()
-        for t in self.insp.get_table_names():
+        for t in inspector.get_table_names():
             meta = MetaData()
-            allTables.append(TableProcessor(Table(t, meta)))
-#         self.tables = list()
-#         while allTables:
-#             allTableNames = [t.tablename for t in self.tables]
-#             unRefTables = [t for t in allTables
-#                              if (len(t._referenceTables)==0
-#                              or all([x.name in allTableNames for x in t._referenceTables]))]
-#             assert not (len(unRefTables)==0 and len(allTables)>0)
-#             self.tables.extend(unRefTables)
-#             allTables=[t for t in allTables if t not in unRefTables]
+            tblMeta = Table(t, meta)
+            allTables.append(TableInfo(tblMeta, connection, inspector))
         for t in allTables:
             t._resolveForeignKeys(allTables)
         self.tables = allTables
@@ -43,12 +39,10 @@ class SqlDbProcessor(object):
             table.export()
 
 
-class TableProcessor(object):
+class TableInfo(object):
 
-    def __init__(self, saTableMetadata):
-        self.metadata = saTableMetadata
-        self.wrkDB = DBConnManager()
-        inspector = self.wrkDB.srcinsp
+    def __init__(self, saTableMetadata, connection, inspector):
+        self.__connection = connection
         inspector.reflecttable(saTableMetadata, None)
         self.query = select([saTableMetadata])
         self.tablename = saTableMetadata.name
@@ -66,11 +60,11 @@ class TableProcessor(object):
     def _resolveForeignKeys(self, dbContext):
         self.foreignKeys = list()
         for t in self._fKeys:
-            self.foreignKeys.append(ForeignKeyProcessor(t, self, dbContext))
+            self.foreignKeys.append(ForeignKeyInfo(t, self, dbContext))
         self.refTables = [k.refTable for k in self.foreignKeys]
 
     def iterRows(self):
-        for r in self.wrkDB.srcconn.execute(self.query):
+        for r in self.__connection.execute(self.query):
             yield r
 
     def export(self):
@@ -81,9 +75,9 @@ class TableProcessor(object):
         self.filesWritten = csvFileWriter.getFilesWritten()
 
 
-class ForeignKeyProcessor(object):
+class ForeignKeyInfo(object):
     def __init__(self, fKeyConstr, table, dbContext):
-        self.metadata = fKeyConstr
+        self._metadata = fKeyConstr
         self.table = table
         assert len(fKeyConstr.elements) > 0
         refTblNames = list(set([elem.column.table.name
@@ -96,3 +90,54 @@ class ForeignKeyProcessor(object):
         for i in zip(fKeyConstr.columns, [elem.column.name
                                             for elem in fKeyConstr.elements]):
             self.cols.append({"referencing": i[0], "referenced": i[1]})
+
+
+def getTestedSQLDatabase(dburi, tryWrite=False):
+    '''Gets an sqlalchemy db uri and returns a triplet of engine, connection
+       and inspector after testing adequately that the database is functional.
+       If tryWrite is True, it will test for table creation, insert,
+       update and delete.'''
+    try:
+        engine = create_engine(dburi)
+        conn = engine.connect()
+        insp = reflection.Inspector.from_engine(engine)
+    except Exception as ex:
+        raise DbNotFoundException(ex, "Could not connect to DB %s." % dburi)
+    try:
+        meta = MetaData()
+        meta.reflect(bind=engine)
+        sampleTblName = insp.get_table_names()[0]
+        sampleTbl = Table(sampleTblName, meta)
+        #insp.reflecttable(sampleTbl,None)
+        s = select([sampleTbl])
+        result = conn.execute(s)
+        _ = result.fetchone()
+    except Exception as ex:
+        raise  DBUnreadableException(ex, "Could not SELECT on DB %s." % dburi)
+    if tryWrite:
+        if insp.get_table_names():
+            raise WorkflowException("DB %s is not empty." % dburi)
+
+        try:
+            md = MetaData()
+            testTable = Table('example', md,
+                              Column('id', Integer, primary_key=True))
+            md.create_all(engine)
+        except Exception as ex:
+            raise DBInsufficientPrivileges(ex,
+                                           "Failed to create table in DB %s ."
+                                           % dburi)
+
+        try:
+            ins = testTable.insert().values(id=1)
+            _ = conn.execute(ins)
+            s = select([testTable])
+            _ = conn.execute(s)
+            stmt = testTable.update().values(id=2)
+            conn.execute(stmt)
+            conn.execute(testTable.delete())
+            testTable.drop(bind=engine)
+        except Exception as ex:
+            raise DBInsufficientPrivileges("Exception while testing trivial operations in DB %s."
+                                           % dburi)
+    return conn, insp

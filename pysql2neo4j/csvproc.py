@@ -7,8 +7,7 @@ Created on 27 Nov 2014
 import csv
 import os.path
 
-wrkDir = r'C:\Users\Developer\Documents\GitHub\pysql2neo4j\csvdir'
-csvRowLimit = 1000
+from configman import Config
 
 
 def fixPath(path):
@@ -24,13 +23,16 @@ class CsvHandler(object):
         '''
         Constructor
         '''
+        config = Config()
+        self._csvdir = config.globals["csvdir"]
+        self._csvRowLimit = config.globals["csvrowlimit"]
         self._table = table
         self._volumeNo = 1
         self._filesWritten = []
         self._getWriter()
 
     def _getWriter(self):
-        csvFileName = os.path.join(wrkDir,
+        csvFileName = os.path.join(self._csvdir,
                                    self._table.tablename + "%d.csv" %
                                    self._volumeNo)
         self._csvFile = open(csvFileName, "wb")
@@ -50,7 +52,7 @@ class CsvHandler(object):
 
     def writeRow(self, row):
         self._csvRowCounter += 1
-        if self._csvRowCounter > csvRowLimit:
+        if self._csvRowCounter > self._csvRowLimit:
             self._csvRowCounter = 1
             self._next()
         self._csvWriter.writerow(row)
