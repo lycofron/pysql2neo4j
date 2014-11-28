@@ -6,11 +6,11 @@ It is based on SqlAlchemy and py2neo.
 
 ### What it does (in brief):
 
--sqlalchemy inspects the database
--tables are extracted to CSV files
--csv files are imported into Neo4j
--Constraints or indexes are created for each primary key
--relations are imported
+ * sqlalchemy inspects the database
+ * tables are extracted to CSV files
+ * csv files are imported into Neo4j
+ * Constraints or indexes are created for each primary key
+ * relations are imported
 
 So far, the script has succesfully migrated SAKILA sample database on MySQL. No other tests have been performed, though.
 
