@@ -22,8 +22,21 @@ class Config(object):
     def __init__(self):
         self.__config = ConfigParser.RawConfigParser()
         self.__config.read(self.CONFIGFILE)
-        globalOptions = [x for x in self.__config.items(self.GLOBALSECTION)]
-        self.globals = {k: v for k, v in globalOptions}
+        self.globals = {}
+        self.globals["csvdir"] = self.__config.get(self.GLOBALSECTION,
+                                                    "csvdir")
+        self.globals["csvrowlimit"] = self.__config.getint(self.GLOBALSECTION,
+                                                           "csvrowlimit")
+        try:
+            self.globals['labeltransform'] = \
+                self.__config.get(self.GLOBALSECTION, "labeltransform")
+        except ConfigParser.NoOptionError:
+            self.globals['labeltransform'] = 'capitalize'
+        try:
+            self.globals['transformRelTypes'] = \
+                self.__config.get(self.GLOBALSECTION, "transformRelTypes")
+        except ConfigParser.NoOptionError:
+            self.globals['transformRelTypes'] = 'allcaps'
 
     def getSqlDbUri(self):
         driver = self.__config.get(self.SQLDBSECTION, "driver")

@@ -6,11 +6,19 @@ from configman import Config
 
 
 class GraphProc(object):
+    relStatementPat = """USING PERIODIC COMMIT
+LOAD CSV WITH HEADERS FROM 'file:%s' AS csvLine
+MATCH (src:%s { %s}),(dest:%s { %s})
+CREATE (src)-[:%s]->(dest)"""
 
     def __init__(self):
         config = Config()
         graphDbUrl = config.getGraphDBUri()
         graphDbCredentials = config.getGraphDBCredentials()
+        if config.globals['transformRelTypes'] == 'allcaps':
+            self.__transformRelTypes = string.upper
+        else:
+            self.__transformRelTypes = lambda x: x
         self.graphDb = getTestedNeo4jDB(graphDbUrl, graphDbCredentials)
 
 #     def graphSearch(self, label, properties=None, limit=None, skip=None, orderBy=None):
@@ -52,10 +60,10 @@ class GraphProc(object):
 #         response.close()
 
     def importTableCsv(self, tableObj):
-        print "Importing %s..." % tableObj.tablename
+        print "Importing %s..." % tableObj.labelName
         cols = ["%s: line.%s" % (col, col) for col in tableObj.allcols]
         colClause = string.join(cols, ',')
-        createClause = "CREATE (n:%s { %s})" % (tableObj.tablename, colClause)
+        createClause = "CREATE (n:%s { %s})" % (tableObj.labelName, colClause)
         for f in tableObj.filesWritten:
             importClause = "LOAD CSV WITH HEADERS FROM 'file:%s' AS line " % f
             cypherQuery = importClause + createClause
@@ -63,17 +71,35 @@ class GraphProc(object):
 
     def createIndexes(self, tableObj):
         if len(tableObj.pkeycols) == 1:
-            print "Creating constraint on %s..." % tableObj.tablename
+            print "Creating constraint on %s..." % tableObj.labelName
             statement = """create constraint on (n:%s)
-            assert n.%s is unique""" % (tableObj.tablename,
+            assert n.%s is unique""" % (tableObj.labelName,
                                         tableObj.pkeycols[0])
             self.graphDb.cypher.run(statement)
         else:
-            print "Creating indexes on %s..." % tableObj.tablename
+            print "Creating indexes on %s..." % tableObj.labelName
             for col in tableObj.pkeycols:
-                statement = "create index on :%s(%s)" % (tableObj.tablename,
+                statement = "create index on :%s(%s)" % (tableObj.labelName,
                                                          col)
                 self.graphDb.cypher.run(statement)
+
+    def createRelations(self, foreignKey):
+        sourceLabel = foreignKey.table.labelName
+        targetLabel = foreignKey.refTable.labelName
+        keyColsSource = string.join(["%s: csvLine.%s" % (col, col)
+                                     for col in foreignKey.table.pkeycols],
+                                    ",")
+        keyColsTarget = string.join(["%s: csvLine.%s" %
+                                     (col["referenced"], col["referencing"])
+                                     for col in foreignKey.cols],
+                                     ",")
+        relType = self.__transformRelTypes(sourceLabel + '_RL_' + targetLabel)
+        print "Foreign key to table %s..." % targetLabel
+        for filename in foreignKey.table.filesWritten:
+            statement = self.relStatementPat % (filename, sourceLabel,
+                                                keyColsSource, targetLabel,
+                                                keyColsTarget, relType)
+            self.graphDb.cypher.run(statement)
 
 
 def getTestedNeo4jDB(graphDBurl, graphDbCredentials):

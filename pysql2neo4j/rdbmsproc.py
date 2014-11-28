@@ -3,6 +3,9 @@ Created on 04 May 2013
 
 @author: theodojo
 '''
+
+import string
+
 from sqlalchemy.schema import ForeignKeyConstraint
 from sqlalchemy import create_engine, MetaData, select
 from sqlalchemy.engine import reflection
@@ -20,11 +23,12 @@ class SqlDbInfo(object):
         config = Config()
         sqldburi = config.getSqlDbUri()
         connection, inspector = getTestedSQLDatabase(sqldburi)
+        labelTransform = config.globals['labeltransform']
         allTables = list()
         for t in inspector.get_table_names():
             meta = MetaData()
             tblMeta = Table(t, meta)
-            allTables.append(TableInfo(tblMeta, connection, inspector))
+            allTables.append(TableInfo(tblMeta, connection, inspector, labelTransform))
         for t in allTables:
             t._resolveForeignKeys(allTables)
         self.tables = allTables
@@ -41,11 +45,15 @@ class SqlDbInfo(object):
 
 class TableInfo(object):
 
-    def __init__(self, saTableMetadata, connection, inspector):
+    def __init__(self, saTableMetadata, connection, inspector, labelTransform):
         self.__connection = connection
         inspector.reflecttable(saTableMetadata, None)
         self.query = select([saTableMetadata])
         self.tablename = saTableMetadata.name
+        if labelTransform == 'capitalize':
+            self.labelName = string.capitalize(self.tablename)
+        else:
+            self.labelName = self.tablename
         columns = inspector.get_columns(self.tablename)
         self.allcols = [x["name"] for x in columns]
         constraints = inspector.get_pk_constraint(self.tablename)
@@ -73,7 +81,6 @@ class TableInfo(object):
             csvFileWriter.writeRow(list(rowData))
         csvFileWriter.close()
         self.filesWritten = csvFileWriter.getFilesWritten()
-
 
 class ForeignKeyInfo(object):
     def __init__(self, fKeyConstr, table, dbContext):
