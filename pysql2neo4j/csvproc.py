@@ -4,7 +4,7 @@ Created on 27 Nov 2014
 @author: Developer
 '''
 
-import csv
+import unicodecsv as csv
 import os.path
 
 from configman import confDict
