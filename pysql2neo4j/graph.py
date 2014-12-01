@@ -2,7 +2,7 @@ import string
 from py2neo import Graph, authenticate
 from py2neo import Node
 from customexceptions import DBUnreadableException, DBInsufficientPrivileges
-from configman import Config
+from configman import getGraphDBUri, getGraphDBCredentials, confDict
 
 
 class GraphProc(object):
@@ -12,10 +12,9 @@ MATCH (src:%s { %s}),(dest:%s { %s})
 CREATE (src)-[:%s]->(dest)"""
 
     def __init__(self):
-        config = Config()
-        graphDbUrl = config.getGraphDBUri()
-        graphDbCredentials = config.getGraphDBCredentials()
-        if config.globals['transformRelTypes'] == 'allcaps':
+        graphDbUrl = getGraphDBUri()
+        graphDbCredentials = getGraphDBCredentials()
+        if confDict['transformRelTypes'] == 'allcaps':
             self.__transformRelTypes = string.upper
         else:
             self.__transformRelTypes = lambda x: x

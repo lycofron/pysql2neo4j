@@ -7,7 +7,6 @@ Created on 24 Apr 2013
 ##Yeah, this has nothing to do with the rest of the code
 ##this is just a code testing playground.
 
-import string
 from pysql2neo4j.rdbmsproc import SqlDbInfo
 from pysql2neo4j.graph import GraphProc
 

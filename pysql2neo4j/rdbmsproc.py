@@ -11,7 +11,7 @@ from sqlalchemy import create_engine, MetaData, select
 from sqlalchemy.engine import reflection
 from sqlalchemy import Table, Column, Integer
 
-from configman import Config
+from configman import getSqlDbUri, confDict
 from csvproc import CsvHandler
 from utils import listUnique
 from customexceptions import DBInsufficientPrivileges, DbNotFoundException
@@ -20,10 +20,9 @@ from customexceptions import DBUnreadableException, WorkflowException
 
 class SqlDbInfo(object):
     def __init__(self):
-        config = Config()
-        sqldburi = config.getSqlDbUri()
+        sqldburi = getSqlDbUri()
         connection, inspector = getTestedSQLDatabase(sqldburi)
-        labelTransform = config.globals['labeltransform']
+        labelTransform = confDict['labeltransform']
         allTables = list()
         for t in inspector.get_table_names():
             meta = MetaData()
@@ -81,6 +80,7 @@ class TableInfo(object):
             csvFileWriter.writeRow(list(rowData))
         csvFileWriter.close()
         self.filesWritten = csvFileWriter.getFilesWritten()
+
 
 class ForeignKeyInfo(object):
     def __init__(self, fKeyConstr, table, dbContext):

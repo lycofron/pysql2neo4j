@@ -7,7 +7,7 @@ Created on 27 Nov 2014
 import csv
 import os.path
 
-from configman import Config
+from configman import confDict
 
 
 def fixPath(path):
@@ -23,9 +23,8 @@ class CsvHandler(object):
         '''
         Constructor
         '''
-        config = Config()
-        self._csvdir = config.globals["csvdir"]
-        self._csvRowLimit = config.globals["csvrowlimit"]
+        self._csvdir = confDict["csvdir"]
+        self._csvRowLimit = confDict["csvrowlimit"]
         self._table = table
         self._volumeNo = 1
         self._filesWritten = []
