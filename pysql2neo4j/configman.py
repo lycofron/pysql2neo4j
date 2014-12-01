@@ -22,6 +22,8 @@ confDict["csvdir"] = __config.get(__GLOBALSECTION,
                                             "csvdir")
 confDict["csvrowlimit"] = __config.getint(__GLOBALSECTION,
                                                    "csvrowlimit")
+confDict["periodiccommitevery"] = __config.getint(__GLOBALSECTION,
+                                                   "periodiccommitevery")
 try:
     confDict['labeltransform'] = \
         __config.get(__GLOBALSECTION, "labeltransform")

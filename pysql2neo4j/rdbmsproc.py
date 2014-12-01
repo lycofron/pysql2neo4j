@@ -16,6 +16,7 @@ from csvproc import CsvHandler
 from utils import listUnique
 from customexceptions import DBInsufficientPrivileges, DbNotFoundException
 from customexceptions import DBUnreadableException, WorkflowException
+from datatypes import getHandler
 
 
 class SqlDbInfo(object):
@@ -27,7 +28,8 @@ class SqlDbInfo(object):
         for t in inspector.get_table_names():
             meta = MetaData()
             tblMeta = Table(t, meta)
-            allTables.append(TableInfo(tblMeta, connection, inspector, labelTransform))
+            allTables.append(TableInfo(tblMeta, connection, inspector,
+                                       labelTransform))
         for t in allTables:
             t._resolveForeignKeys(allTables)
         self.tables = allTables
@@ -54,20 +56,25 @@ class TableInfo(object):
         else:
             self.labelName = self.tablename
         columns = inspector.get_columns(self.tablename)
-        self.allcols = [x["name"] for x in columns]
-        constraints = inspector.get_pk_constraint(self.tablename)
-        self.pkeycols = constraints["constrained_columns"]
-        self._fKeys = [x for x in saTableMetadata.constraints if type(x) == ForeignKeyConstraint]
-        fkeycols = []
-        for x in self._fKeys:
-            fkeycols.extend(x.columns)
-        self.fKeysCols = listUnique(fkeycols) if self._fKeys else list()
-        self.essCols = [x for x in self.allcols if x not in self.fKeysCols]
+        self.cols = [ColumnInfo(x) for x in columns]
+        pk = inspector.get_pk_constraint(self.tablename)
+        pkCols = pk["constrained_columns"]
+        self.pkeycols = list()
+        for x in self.cols:
+            if x.name in pkCols:
+                self.pkeycols.append(x)
+                x.isPKeyCol = True
+            else:
+                x.isPKeyCol = False
+        self._fKeys = inspector.get_foreign_keys(self.tablename)
 
     def _resolveForeignKeys(self, dbContext):
+        fkeycols = []
         self.foreignKeys = list()
-        for t in self._fKeys:
-            self.foreignKeys.append(ForeignKeyInfo(t, self, dbContext))
+        for fk in self._fKeys:
+            self.foreignKeys.append(ForeignKeyInfo(fk, self, dbContext))
+            fkeycols.extend(fk['constrained_columns'])
+        self.fKeysCols = listUnique(fkeycols) if self._fKeys else list()
         self.refTables = [k.refTable for k in self.foreignKeys]
 
     def iterRows(self):
@@ -75,28 +82,33 @@ class TableInfo(object):
             yield r
 
     def export(self):
-        csvFileWriter = CsvHandler(self)
+        header = [x.name for x in self.cols]
+        csvFileWriter = CsvHandler(self.tablename, header)
         for rowData in self.iterRows():
-            csvFileWriter.writeRow(list(rowData))
+            csvData = [c.handler.expFunc(rowData[c.name]) for c in self.cols]
+            csvFileWriter.writeRow(list(csvData))
         csvFileWriter.close()
         self.filesWritten = csvFileWriter.getFilesWritten()
 
 
+class ColumnInfo(object):
+    def __init__(self, saCol):
+        self.name = saCol['name']
+        self.handler = getHandler(saCol)
+        self.isPKeyCol = None
+
+
 class ForeignKeyInfo(object):
     def __init__(self, fKeyConstr, table, dbContext):
-        self._metadata = fKeyConstr
         self.table = table
-        assert len(fKeyConstr.elements) > 0
-        refTblNames = list(set([elem.column.table.name
-                                      for elem in fKeyConstr.elements]))
-        assert len(refTblNames) == 1
-        refTablesAll = [t for t in dbContext if t.tablename == refTblNames[0]]
+        refTablesAll = [t for t in dbContext if t.tablename\
+                        == fKeyConstr['referred_table']]
         assert len(refTablesAll) == 1
         self.refTable = refTablesAll[0]
-        self.cols = []
-        for i in zip(fKeyConstr.columns, [elem.column.name
-                                            for elem in fKeyConstr.elements]):
-            self.cols.append({"referencing": i[0], "referenced": i[1]})
+        self.consCols = [c for c in self.table.cols\
+                         if c.name in fKeyConstr['constrained_columns']]
+        self.refCols = [c for c in self.table.cols\
+                        if c.name in fKeyConstr['referred_columns']]
 
 
 def getTestedSQLDatabase(dburi, tryWrite=False):

@@ -6,7 +6,7 @@ from configman import getGraphDBUri, getGraphDBCredentials, confDict
 
 
 class GraphProc(object):
-    relStatementPat = """USING PERIODIC COMMIT
+    relStatementPat = """USING PERIODIC COMMIT %d
 LOAD CSV WITH HEADERS FROM 'file:%s' AS csvLine
 MATCH (src:%s { %s}),(dest:%s { %s})
 CREATE (src)-[:%s]->(dest)"""
@@ -19,53 +19,22 @@ CREATE (src)-[:%s]->(dest)"""
         else:
             self.__transformRelTypes = lambda x: x
         self.graphDb = getTestedNeo4jDB(graphDbUrl, graphDbCredentials)
-
-#     def graphSearch(self, label, properties=None, limit=None, skip=None, orderBy=None):
-#         """ Modified from py2neo.core.Graph.find method: find all nodes matching given criteria.
-#             Search on multiple properties allowed.
-#             Added skip, order by clauses
-#             Return iterator over results
-#         """
-#         if not label:
-#             raise ValueError("Empty label")
-#         from py2neo.cypher.lang import cypher_escape
-#         conditions = None
-#         parameters = {}
-#         if properties:
-#             conditionals = list()
-#             for idx, k in enumerate(properties.keys()):
-#                 paramSymbol = "V%d" % idx
-#                 conditionals.append("%s:{%s}" % (cypher_escape(k), paramSymbol))
-#                 parameters[paramSymbol] = properties[k]
-#             conditions = string.join(conditionals, ",")
-#         if conditions is None:
-#             statement = "MATCH (n:%s) RETURN n,labels(n)" % cypher_escape(label)
-#         else:
-#             statement = "MATCH (n:%s {%s}) RETURN n,labels(n)" % (
-#                 cypher_escape(label), conditions)
-#         if orderBy:
-#             statement += " ORDER BY %s" % string.join(["n.%s" % cypher_escape(x)
-#                                                        for x in orderBy],
-#                                                       ",")
-#         if skip:
-#             statement += " SKIP %s" % skip
-#         if limit:
-#             statement += " LIMIT %s" % limit
-#         response = self.cypher.post(statement, parameters)
-#         for record in response.content["data"]:
-#             dehydrated = record[0]
-#             dehydrated.setdefault("metadata", {})["labels"] = record[1]
-#             yield self.hydrate(dehydrated)
-#         response.close()
+        self.periodicCommit = confDict["periodiccommitevery"]
 
     def importTableCsv(self, tableObj):
         print "Importing %s..." % tableObj.labelName
-        cols = ["%s: line.%s" % (col, col) for col in tableObj.allcols]
+        colnames = [col.name for col in tableObj.cols]
+        colImpExpr = [col.handler.impFunc("csvLine.%s") % col.name
+                      for col in tableObj.cols]
+        cols = ["%s: %s" % x for x in zip(colnames, colImpExpr)]
         colClause = string.join(cols, ',')
         createClause = "CREATE (n:%s { %s})" % (tableObj.labelName, colClause)
         for f in tableObj.filesWritten:
-            importClause = "LOAD CSV WITH HEADERS FROM 'file:%s' AS line " % f
-            cypherQuery = importClause + createClause
+            periodicCommitClause = "USING PERIODIC COMMIT %d " %\
+                                self.periodicCommit
+            importClause = "LOAD CSV WITH HEADERS FROM 'file:%s' AS csvLine "\
+                            % f
+            cypherQuery = periodicCommitClause + importClause + createClause
             self.graphDb.cypher.run(cypherQuery)
 
     def createIndexes(self, tableObj):
@@ -73,31 +42,38 @@ CREATE (src)-[:%s]->(dest)"""
             print "Creating constraint on %s..." % tableObj.labelName
             statement = """create constraint on (n:%s)
             assert n.%s is unique""" % (tableObj.labelName,
-                                        tableObj.pkeycols[0])
+                                        tableObj.pkeycols[0].name)
+            print statement
             self.graphDb.cypher.run(statement)
         else:
             print "Creating indexes on %s..." % tableObj.labelName
             for col in tableObj.pkeycols:
                 statement = "create index on :%s(%s)" % (tableObj.labelName,
-                                                         col)
+                                                         col.name)
+                print statement
                 self.graphDb.cypher.run(statement)
 
-    def createRelations(self, foreignKey):
-        sourceLabel = foreignKey.table.labelName
-        targetLabel = foreignKey.refTable.labelName
-        keyColsSource = string.join(["%s: csvLine.%s" % (col, col)
-                                     for col in foreignKey.table.pkeycols],
+    def createRelations(self, fKey):
+        fkLabel = fKey.table.labelName
+        pkLabel = fKey.refTable.labelName
+        fkColsImportExpr = [(col.name, col.handler.impFunc("csvLine.%s") %
+                             col.name) for col in fKey.table.pkeycols]
+        fkCols = string.join(["%s: %s" % tup for tup in fkColsImportExpr],
                                     ",")
-        keyColsTarget = string.join(["%s: csvLine.%s" %
-                                     (col["referenced"], col["referencing"])
-                                     for col in foreignKey.cols],
-                                     ",")
-        relType = self.__transformRelTypes(sourceLabel + '_RL_' + targetLabel)
-        print "Foreign key to table %s..." % targetLabel
-        for filename in foreignKey.table.filesWritten:
-            statement = self.relStatementPat % (filename, sourceLabel,
-                                                keyColsSource, targetLabel,
-                                                keyColsTarget, relType)
+        pkColsImportExpr = [(col[1].name,
+                             col[0].handler.impFunc("csvLine.%s") % \
+                             col[0].name) for col in \
+                             zip(fKey.consCols, fKey.refCols)]
+        pkCols = string.join(["%s: %s" % tup
+                                     for tup in pkColsImportExpr], ",")
+        relType = self.__transformRelTypes(fkLabel + '_RL_' + pkLabel)
+        print "Foreign key to table %s..." % pkLabel
+        for filename in fKey.table.filesWritten:
+            statement = self.relStatementPat % (self.periodicCommit,
+                                                filename, pkLabel,
+                                                pkCols, fkLabel,
+                                                fkCols, relType)
+            print statement
             self.graphDb.cypher.run(statement)
 
 
