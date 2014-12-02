@@ -109,11 +109,13 @@ class TableInfo(object):
         else:
             idxCols.append(self.pkCols.keys())
 
-        self.uniqColNames = listUnique(listFlatten(uniqCols))
-        self.idxColsName = listSubtract(listUnique(listFlatten(idxCols)),
-                                    self.uniqColNames)
-        LOG.debug("Unique constraints on columns %s" % str(self.uniqColNames))
-        LOG.debug("Indexes on columns %s" % str(self.idxColsName))
+        uniqColNames = listUnique(listFlatten(uniqCols))
+        idxColNames = listSubtract(listUnique(listFlatten(idxCols)),
+                                    uniqColNames)
+        self.uniqCols = [self.cols[x] for x in uniqColNames]
+        self.idxCols = [self.cols[x] for x in idxColNames]
+        LOG.debug("Unique constraints on columns %s" % str(uniqColNames))
+        LOG.debug("Indexes on columns %s" % str(idxColNames))
 
     def iterRows(self):
         for r in self.sqlDb.connection.execute(self.query):

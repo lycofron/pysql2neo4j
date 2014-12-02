@@ -36,17 +36,17 @@ CREATE (src)-[:%s]->(dest)"""
     def createConstraints(self, tableObj):
         label = tableObj.labelName
         LOG.info("Creating constraint on %s..." % tableObj.labelName)
-        for col in tableObj.uniqColNames:
+        for col in tableObj.uniqCols:
             statement = """create constraint on (n:%s)
-            assert n.%s is unique""" % (label, col)
+            assert n.%s is unique""" % (label, col.name)
             LOG.debug(statement)
             self.graphDb.cypher.run(statement)
 
     def createIndexes(self, tableObj):
         label = tableObj.labelName
         LOG.info("Creating indexes on %s..." % label)
-        for col in tableObj.idxColsName:
-            statement = "create index on :%s(%s)" % (label, col)
+        for col in tableObj.idxCols:
+            statement = "create index on :%s(%s)" % (label, col.name)
             LOG.debug(statement)
             self.graphDb.cypher.run(statement)
 
