@@ -22,6 +22,19 @@ def listSubtract(seqFrom, seq):
     return [x for x in seqFrom if x not in seq]
 
 
+def listFlattenIter(seq):
+    for x in seq:
+        if hasattr(x, '__iter__'):
+            for y in listFlattenIter(x):
+                yield y
+        else:
+            yield x
+
+
+def listFlatten(seq):
+    return [x for x in listFlattenIter(seq)]
+
+
 #Thanks http://stackoverflow.com/a/11111177/2822594
 def unix_time(dt):
     '''returns a timedelta from unix epoch'''

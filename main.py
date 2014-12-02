@@ -18,6 +18,7 @@ from pysql2neo4j.configman import LOG
 
 if __name__ == '__main__':
     try:
+        #Step 0: Initialize
         LOG.info("Initializing...")
         sqlDb = SqlDbInfo()
         graphDb = GraphProc()
@@ -31,8 +32,9 @@ if __name__ == '__main__':
         for t in sqlDb.iterTables:
             graphDb.importTableCsv(t)
 
-        #Step 3: Create constraints or indexes
+        #Step 3: Create constraints and indexes
         for t in sqlDb.iterTables:
+            graphDb.createConstraints(t)
             graphDb.createIndexes(t)
 
         LOG.info("\nFinished import.\n\nAdding relations...")

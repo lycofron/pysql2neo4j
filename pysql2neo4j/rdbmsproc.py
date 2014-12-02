@@ -13,7 +13,7 @@ from sqlalchemy import Table, Column, Integer
 
 from configman import getSqlDbUri, confDict, LOG
 from csvproc import CsvHandler
-from utils import listUnique
+from utils import listUnique, listSubtract, listFlatten
 from customexceptions import DBInsufficientPrivileges, DbNotFoundException
 from customexceptions import DBUnreadableException
 from datatypes import getHandler
@@ -40,6 +40,7 @@ class SqlDbInfo(object):
         self.tables = allTables
         for tableObject in self.tables.values():
             tableObject._resolveForeignKeys()
+            tableObject._setIndexedCols()
 
     @property
     def iterTables(self):
@@ -67,6 +68,7 @@ class TableInfo(object):
         self.query = select([saTableMetadata])
         self.tableName = saTableMetadata.name
         self.labelName = self.sqlDb.labelTransform(self.tableName)
+        self.depTables = list()
         columns = self.sqlDb.inspector.get_columns(self.tableName)
         self.cols = OrderedDict()
         for x in columns:
@@ -88,8 +90,30 @@ class TableInfo(object):
         for fk in self._fKeysSA:
             self.fKeys.append(ForeignKeyInfo(fk, self))
             fkeycols.extend(fk['constrained_columns'])
-        self.fKeysCols = listUnique(fkeycols) if self._fKeysSA else list()
+        fkeycolsUniq = listUnique(fkeycols) if self._fKeysSA else list()
+        self.fKeysCols = OrderedDict()
+        for name in fkeycolsUniq:
+            self.fKeysCols[name] = self.cols[name]
         self.refTables = [k.refTable for k in self.fKeys]
+
+    def _setIndexedCols(self):
+        uniq = self.sqlDb.inspector.get_unique_constraints(self.tableName)
+        idx = self.sqlDb.inspector.get_indexes(self.tableName)
+        uniqCols = [x['column_names'] for x in uniq \
+                    if len(x['column_names']) == 1]
+        idxCols = [x['column_names'] for x in idx]
+        idxCols.extend([x['column_names'] for x in uniq \
+                        if len(x['column_names']) != 1])
+        if len(self.pkCols) == 1:
+            uniqCols.append(self.pkCols.keys())
+        else:
+            idxCols.append(self.pkCols.keys())
+
+        self.uniqColNames = listUnique(listFlatten(uniqCols))
+        self.idxColsName = listSubtract(listUnique(listFlatten(idxCols)),
+                                    self.uniqColNames)
+        LOG.debug("Unique constraints on columns %s" % str(self.uniqColNames))
+        LOG.debug("Indexes on columns %s" % str(self.idxColsName))
 
     def iterRows(self):
         for r in self.sqlDb.connection.execute(self.query):
@@ -114,6 +138,11 @@ class TableInfo(object):
     def hasFkeys(self):
         return len(self.fKeys) > 0
 
+    def isManyToMany(self):
+        return len(self.refTables) == 2 and \
+            len(listSubtract(self.pkCols.keys(), self.fKeysCols.keys())) == 0 \
+            and len(self.depTables) == 0
+
 
 class ColumnInfo(object):
     def __init__(self, saCol, table):
@@ -129,6 +158,7 @@ class ForeignKeyInfo(object):
     def __init__(self, fKeyConstr, table):
         self.table = table
         self.refTable = self.table.sqlDb.tables[fKeyConstr['referred_table']]
+        self.refTable.depTables.append(self.table)
         self.consCols = OrderedDict()
         for colName in fKeyConstr['constrained_columns']:
             self.consCols[colName] = self.table.cols[colName]

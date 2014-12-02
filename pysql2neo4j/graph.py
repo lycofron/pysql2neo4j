@@ -33,19 +33,20 @@ CREATE (src)-[:%s]->(dest)"""
             cypherQuery = periodicCommitClause + importClause + createClause
             self.graphDb.cypher.run(cypherQuery)
 
+    def createConstraints(self, tableObj):
+        label = tableObj.labelName
+        LOG.info("Creating constraint on %s..." % tableObj.labelName)
+        for col in tableObj.uniqColNames:
+            statement = """create constraint on (n:%s)
+            assert n.%s is unique""" % (label, col)
+            LOG.debug(statement)
+            self.graphDb.cypher.run(statement)
+
     def createIndexes(self, tableObj):
         label = tableObj.labelName
-        if tableObj.hasCompositePK():
-            LOG.info("Creating indexes on %s..." % label)
-            for col in tableObj.pkCols.keys():
-                statement = "create index on :%s(%s)" % (label, col)
-                LOG.debug(statement)
-                self.graphDb.cypher.run(statement)
-        else:
-            LOG.info("Creating constraint on %s..." % tableObj.labelName)
-            field = iter(tableObj.pkCols.keys()).next()
-            statement = """create constraint on (n:%s)
-            assert n.%s is unique""" % (label, field)
+        LOG.info("Creating indexes on %s..." % label)
+        for col in tableObj.idxColsName:
+            statement = "create index on :%s(%s)" % (label, col)
             LOG.debug(statement)
             self.graphDb.cypher.run(statement)
 
