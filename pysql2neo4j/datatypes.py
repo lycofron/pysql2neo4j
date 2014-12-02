@@ -20,8 +20,14 @@ lobTypes = [types.BLOB, types.CLOB]
 
 class sqlTypeHandler(object):
     typeList = []
-    expFunc = lambda _, x: x
-    impFunc = lambda _, x: x
+
+    @classmethod
+    def expFunc(cls, x):
+        return x
+
+    @classmethod
+    def impFunc(cls, x):
+        return x
 
     @classmethod
     def isObject(cls, typeVal):
@@ -34,43 +40,71 @@ class sqlString(sqlTypeHandler):
 
 class sqlInteger(sqlTypeHandler):
     typeList = integerTypes
-    impFunc = lambda _, x: "toInt(%s)" % x
+
+    @classmethod
+    def impFunc(cls, x):
+        return "toInt(%s)" % x
 
 
 class sqlFloat(sqlTypeHandler):
     typeList = floatTypes
-    impFunc = lambda _, x: "toFloat(%s)" % x
+
+    @classmethod
+    def impFunc(cls, x):
+        return "toFloat(%s)" % x
 
 
-class sqlDouble(sqlTypeHandler):
+class sqlDouble(sqlFloat):
     typeList = doubleTypes
-    impFunc = lambda _, x: "toFloat(%s)" % x
 
 
-class sqlDate(sqlTypeHandler):
+class sqlDate(sqlInteger):
     typeList = dateTypes
-    expFunc = lambda _, x: getUnixTime(x) if x else ''
-    impFunc = lambda _, x: "toInt(%s)" % x
+
+    @classmethod
+    def expFunc(cls, x):
+        return getUnixTime(x) if x else ''
 
 
 class sqlBool(sqlTypeHandler):
     typeList = booleanTypes
+
+    @classmethod
+    def expFunc(cls, x):
+        return 1 if x else 0
+
+    @classmethod
+    def impFunc(cls, x):
+        return "%s > 0" % x
     expFunc = lambda _, x: 1 if x else 0
-    impFunc = lambda _, x: "%s > 0" % x
 
 
 class sqlLOB(sqlTypeHandler):
     typeList = lobTypes
-    expFunc = lambda *unused: None
+
+    @classmethod
+    def expFunc(cls, _):
+        return None
+
+
+def getSubclassesDeep(cls):
+    for subcls in cls.__subclasses__():
+        for subsubcls in getSubclassesDeep(subcls):
+            yield subsubcls
+    yield cls
 
 
 def getHandler(saCol):
     t = saCol['type']
     h = None
-    for cls in sqlTypeHandler.__subclasses__():
+    for cls in getSubclassesDeep(sqlTypeHandler):
         if cls.isObject(t):
-            h = cls()
+            h = cls
             break
     else:
-        h = sqlTypeHandler()
+        h = sqlTypeHandler
     return h
+
+if __name__ == '__main__':
+    for cls in getSubclassesDeep(sqlTypeHandler):
+        print cls

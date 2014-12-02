@@ -5,8 +5,8 @@ Created on 04 May 2013
 '''
 
 import string
+from collections import OrderedDict
 
-from sqlalchemy.schema import ForeignKeyConstraint
 from sqlalchemy import create_engine, MetaData, select
 from sqlalchemy.engine import reflection
 from sqlalchemy import Table, Column, Integer
@@ -18,97 +18,125 @@ from customexceptions import DBInsufficientPrivileges, DbNotFoundException
 from customexceptions import DBUnreadableException, WorkflowException
 from datatypes import getHandler
 
+_transformRelTypes = lambda x: x
+
+if confDict['transformRelTypes'] == 'allcaps':
+    _transformRelTypes = string.upper
+
 
 class SqlDbInfo(object):
     def __init__(self):
         sqldburi = getSqlDbUri()
         connection, inspector = getTestedSQLDatabase(sqldburi)
+        self.connection = connection
+        self.inspector = inspector
         labelTransform = confDict['labeltransform']
-        allTables = list()
-        for t in inspector.get_table_names():
-            meta = MetaData()
-            tblMeta = Table(t, meta)
-            allTables.append(TableInfo(tblMeta, connection, inspector,
-                                       labelTransform))
-        for t in allTables:
-            t._resolveForeignKeys(allTables)
+        if labelTransform == 'capitalize':
+            self.labelTransform = self.capitalize
+        else:
+            self.labelTransform = self.noTransform
+        allTables = {tableName: TableInfo(self, tableName) \
+                     for tableName in self.inspector.get_table_names()}
         self.tables = allTables
+        for tableObject in self.tables.values():
+            tableObject._resolveForeignKeys()
 
     @property
     def iterTables(self):
-        return self.tables
+        return self.tables.values()
 
     def export(self):
-        for table in self.tables:
-            print "Exporting %s..." % table.tablename
-            table.export()
+        for tblName, tblObject in self.tables.items():
+            print "Exporting %s..." % tblName
+            tblObject.export()
+
+    def capitalize(self, tableName):
+        return string.capitalize(tableName)
+
+    def noTransform(self, tableName):
+        return tableName
 
 
 class TableInfo(object):
 
-    def __init__(self, saTableMetadata, connection, inspector, labelTransform):
-        self.__connection = connection
-        inspector.reflecttable(saTableMetadata, None)
+    def __init__(self, sqlDb, tableName):
+        meta = MetaData()
+        self.sqlDb = sqlDb
+        saTableMetadata = Table(tableName, meta)
+        self.sqlDb.inspector.reflecttable(saTableMetadata, None)
         self.query = select([saTableMetadata])
-        self.tablename = saTableMetadata.name
-        if labelTransform == 'capitalize':
-            self.labelName = string.capitalize(self.tablename)
-        else:
-            self.labelName = self.tablename
-        columns = inspector.get_columns(self.tablename)
-        self.cols = [ColumnInfo(x) for x in columns]
-        pk = inspector.get_pk_constraint(self.tablename)
+        self.tableName = saTableMetadata.name
+        self.labelName = self.sqlDb.labelTransform(self.tableName)
+        columns = self.sqlDb.inspector.get_columns(self.tableName)
+        self.cols = OrderedDict()
+        for x in columns:
+            self.cols[x['name']] = ColumnInfo(x, self)
+        pk = self.sqlDb.inspector.get_pk_constraint(self.tableName)
         pkCols = pk["constrained_columns"]
-        self.pkeycols = list()
-        for x in self.cols:
-            if x.name in pkCols:
-                self.pkeycols.append(x)
-                x.isPKeyCol = True
+        self.pkCols = OrderedDict()
+        for name, col in self.cols.items():
+            if name in pkCols:
+                self.pkCols[name] = col
+                col.isPkCol = True
             else:
-                x.isPKeyCol = False
-        self._fKeys = inspector.get_foreign_keys(self.tablename)
+                col.isPkCol = False
+        self._fKeysSA = self.sqlDb.inspector.get_foreign_keys(self.tableName)
 
-    def _resolveForeignKeys(self, dbContext):
+    def _resolveForeignKeys(self):
         fkeycols = []
-        self.foreignKeys = list()
-        for fk in self._fKeys:
-            self.foreignKeys.append(ForeignKeyInfo(fk, self, dbContext))
+        self.fKeys = list()
+        for fk in self._fKeysSA:
+            self.fKeys.append(ForeignKeyInfo(fk, self))
             fkeycols.extend(fk['constrained_columns'])
-        self.fKeysCols = listUnique(fkeycols) if self._fKeys else list()
-        self.refTables = [k.refTable for k in self.foreignKeys]
+        self.fKeysCols = listUnique(fkeycols) if self._fKeysSA else list()
+        self.refTables = [k.refTable for k in self.fKeys]
 
     def iterRows(self):
-        for r in self.__connection.execute(self.query):
+        for r in self.sqlDb.connection.execute(self.query):
             yield r
 
     def export(self):
-        header = [x.name for x in self.cols]
-        csvFileWriter = CsvHandler(self.tablename, header)
+        header = [x for x in self.cols.keys()]
+        csvFileWriter = CsvHandler(self.tableName, header)
         for rowData in self.iterRows():
-            csvData = [c.handler.expFunc(rowData[c.name]) for c in self.cols]
-            csvFileWriter.writeRow(list(csvData))
+            csvData = [v.expFunc(rowData[k]) \
+                       for k, v in self.cols.items()]
+            csvFileWriter.writeRow(csvData)
         csvFileWriter.close()
         self.filesWritten = csvFileWriter.getFilesWritten()
 
+    def hasCompositePK(self):
+        return len(self.pkCols) > 1
+
+    def hasPK(self):
+        return len(self.pkCols) > 0
+
+    def hasFkeys(self):
+        return len(self.fKeys) > 0
+
 
 class ColumnInfo(object):
-    def __init__(self, saCol):
+    def __init__(self, saCol, table):
+        self.table = table
         self.name = saCol['name']
-        self.handler = getHandler(saCol)
+        self.__handler = getHandler(saCol)
+        self.expFunc = lambda x: self.__handler.expFunc(x)
+        self.impFunc = lambda x: self.__handler.impFunc(x)
         self.isPKeyCol = None
 
 
 class ForeignKeyInfo(object):
-    def __init__(self, fKeyConstr, table, dbContext):
+    def __init__(self, fKeyConstr, table):
         self.table = table
-        refTablesAll = [t for t in dbContext if t.tablename\
-                        == fKeyConstr['referred_table']]
-        assert len(refTablesAll) == 1
-        self.refTable = refTablesAll[0]
-        self.consCols = [c for c in self.table.cols\
-                         if c.name in fKeyConstr['constrained_columns']]
-        self.refCols = [c for c in self.table.cols\
-                        if c.name in fKeyConstr['referred_columns']]
+        self.refTable = self.table.sqlDb.tables[fKeyConstr['referred_table']]
+        self.consCols = OrderedDict()
+        for colName in fKeyConstr['constrained_columns']:
+            self.consCols[colName] = self.table.cols[colName]
+        self.refCols = OrderedDict()
+        for colName in fKeyConstr['referred_columns']:
+            self.refCols[colName] = self.refTable.cols[colName]
+        relType = "%s_%s" % (self.refTable.labelName, self.table.labelName)
+        self.relType = _transformRelTypes(relType)
 
 
 def getTestedSQLDatabase(dburi, tryWrite=False):

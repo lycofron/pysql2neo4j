@@ -37,7 +37,7 @@ if __name__ == '__main__':
 
     #Phase 4: Create relations
     for t in sqlDb.iterTables:
-        print "Processing foreign keys of table %s..." % t.tablename
-        for fk in t.foreignKeys:
+        print "Processing foreign keys of table %s..." % t.tableName
+        for fk in t.fKeys:
             graphDb.createRelations(fk)
     print "Terminated"

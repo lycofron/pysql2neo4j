@@ -14,18 +14,14 @@ CREATE (src)-[:%s]->(dest)"""
     def __init__(self):
         graphDbUrl = getGraphDBUri()
         graphDbCredentials = getGraphDBCredentials()
-        if confDict['transformRelTypes'] == 'allcaps':
-            self.__transformRelTypes = string.upper
-        else:
-            self.__transformRelTypes = lambda x: x
         self.graphDb = getTestedNeo4jDB(graphDbUrl, graphDbCredentials)
         self.periodicCommit = confDict["periodiccommitevery"]
 
     def importTableCsv(self, tableObj):
         print "Importing %s..." % tableObj.labelName
-        colnames = [col.name for col in tableObj.cols]
-        colImpExpr = [col.handler.impFunc("csvLine.%s") % col.name
-                      for col in tableObj.cols]
+        colnames = [x for x in tableObj.cols.keys()]
+        colImpExpr = [col.impFunc("csvLine.%s") % name
+                      for name, col in tableObj.cols.items()]
         cols = ["%s: %s" % x for x in zip(colnames, colImpExpr)]
         colClause = string.join(cols, ',')
         createClause = "CREATE (n:%s { %s})" % (tableObj.labelName, colClause)
@@ -38,35 +34,35 @@ CREATE (src)-[:%s]->(dest)"""
             self.graphDb.cypher.run(cypherQuery)
 
     def createIndexes(self, tableObj):
-        if len(tableObj.pkeycols) == 1:
-            print "Creating constraint on %s..." % tableObj.labelName
-            statement = """create constraint on (n:%s)
-            assert n.%s is unique""" % (tableObj.labelName,
-                                        tableObj.pkeycols[0].name)
-            print statement
-            self.graphDb.cypher.run(statement)
-        else:
-            print "Creating indexes on %s..." % tableObj.labelName
-            for col in tableObj.pkeycols:
-                statement = "create index on :%s(%s)" % (tableObj.labelName,
-                                                         col.name)
+        label = tableObj.labelName
+        if tableObj.hasCompositePK():
+            print "Creating indexes on %s..." % label
+            for col in tableObj.pkCols.keys():
+                statement = "create index on :%s(%s)" % (label, col)
                 print statement
                 self.graphDb.cypher.run(statement)
+        else:
+            print "Creating constraint on %s..." % tableObj.labelName
+            field = iter(tableObj.pkCols.keys()).next()
+            statement = """create constraint on (n:%s)
+            assert n.%s is unique""" % (label, field)
+            print statement
+            self.graphDb.cypher.run(statement)
 
     def createRelations(self, fKey):
         fkLabel = fKey.table.labelName
         pkLabel = fKey.refTable.labelName
-        fkColsImportExpr = [(col.name, col.handler.impFunc("csvLine.%s") %
-                             col.name) for col in fKey.table.pkeycols]
+        fkColsImportExpr = [(name, col.impFunc("csvLine.%s") %
+                             name) for name, col in fKey.table.pkCols.items()]
         fkCols = string.join(["%s: %s" % tup for tup in fkColsImportExpr],
                                     ",")
-        pkColsImportExpr = [(col[1].name,
-                             col[0].handler.impFunc("csvLine.%s") % \
-                             col[0].name) for col in \
-                             zip(fKey.consCols, fKey.refCols)]
+        pkColsImportExpr = [(fkColName,
+                             pkCol.impFunc("csvLine.%s") % pkName) \
+                             for (pkName, pkCol), fkColName in \
+                             zip(fKey.consCols.items(), fKey.refCols.keys())]
         pkCols = string.join(["%s: %s" % tup
                                      for tup in pkColsImportExpr], ",")
-        relType = self.__transformRelTypes(fkLabel + '_RL_' + pkLabel)
+        relType = fKey.relType
         print "Foreign key to table %s..." % pkLabel
         for filename in fKey.table.filesWritten:
             statement = self.relStatementPat % (self.periodicCommit,

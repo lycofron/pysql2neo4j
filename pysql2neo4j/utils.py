@@ -10,10 +10,16 @@ unixEpoch = datetime.datetime.utcfromtimestamp(0)
 
 def listUnique(seq):
     '''Unique items in list, preserving order'''
-    # Thanks to http://stackoverflow.com/a/480227/2822594
+    # Thanks http://stackoverflow.com/a/480227/2822594
     seen = set()
     seen_add = seen.add
     return [x for x in seq if not (x in seen or seen_add(x))]
+
+
+def listSubtract(seqFrom, seq):
+    '''Return all elements in seqFrom that are not in seq,
+    preserving order'''
+    return [x for x in seqFrom if x not in seq]
 
 
 #Thanks http://stackoverflow.com/a/11111177/2822594
