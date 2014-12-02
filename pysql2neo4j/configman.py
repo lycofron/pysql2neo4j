@@ -5,9 +5,13 @@ Created on 24 Apr 2013
 '''
 
 import ConfigParser
+import logging
 from sqlalchemy.engine import url
 from urlparse import urlunparse
 
+logging.basicConfig(format='%(asctime)s: %(levelname)s:%(message)s',
+                    level=logging.DEBUG)
+LOG = logging
 
 __CONFIGFILE = "settings.ini"
 __GLOBALSECTION = 'GLOBAL'

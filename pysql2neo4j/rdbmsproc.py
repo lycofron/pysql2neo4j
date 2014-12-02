@@ -11,7 +11,7 @@ from sqlalchemy import create_engine, MetaData, select
 from sqlalchemy.engine import reflection
 from sqlalchemy import Table, Column, Integer
 
-from configman import getSqlDbUri, confDict
+from configman import getSqlDbUri, confDict, LOG
 from csvproc import CsvHandler
 from utils import listUnique
 from customexceptions import DBInsufficientPrivileges, DbNotFoundException
@@ -47,7 +47,7 @@ class SqlDbInfo(object):
 
     def export(self):
         for tblName, tblObject in self.tables.items():
-            print "Exporting %s..." % tblName
+            LOG.info("Exporting %s..." % tblName)
             tblObject.export()
 
     def capitalize(self, tableName):

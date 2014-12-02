@@ -2,7 +2,7 @@ import string
 from py2neo import Graph, authenticate
 from py2neo import Node
 from customexceptions import DbNotFoundException, DBInsufficientPrivileges
-from configman import getGraphDBUri, getGraphDBCredentials, confDict
+from configman import getGraphDBUri, getGraphDBCredentials, confDict, LOG
 
 
 class GraphProc(object):
@@ -18,7 +18,7 @@ CREATE (src)-[:%s]->(dest)"""
         self.periodicCommit = confDict["periodiccommitevery"]
 
     def importTableCsv(self, tableObj):
-        print "Importing %s..." % tableObj.labelName
+        LOG.info("Importing %s..." % tableObj.labelName)
         colnames = [x for x in tableObj.cols.keys()]
         colImpExpr = [col.impFunc("csvLine.%s") % name
                       for name, col in tableObj.cols.items()]
@@ -36,17 +36,17 @@ CREATE (src)-[:%s]->(dest)"""
     def createIndexes(self, tableObj):
         label = tableObj.labelName
         if tableObj.hasCompositePK():
-            print "Creating indexes on %s..." % label
+            LOG.info("Creating indexes on %s..." % label)
             for col in tableObj.pkCols.keys():
                 statement = "create index on :%s(%s)" % (label, col)
-                print statement
+                LOG.debug(statement)
                 self.graphDb.cypher.run(statement)
         else:
-            print "Creating constraint on %s..." % tableObj.labelName
+            LOG.info("Creating constraint on %s..." % tableObj.labelName)
             field = iter(tableObj.pkCols.keys()).next()
             statement = """create constraint on (n:%s)
             assert n.%s is unique""" % (label, field)
-            print statement
+            LOG.debug(statement)
             self.graphDb.cypher.run(statement)
 
     def createRelations(self, fKey):
@@ -63,13 +63,13 @@ CREATE (src)-[:%s]->(dest)"""
         pkCols = string.join(["%s: %s" % tup
                                      for tup in pkColsImportExpr], ",")
         relType = fKey.relType
-        print "Foreign key to table %s..." % pkLabel
+        LOG.info("Foreign key to table %s..." % pkLabel)
         for filename in fKey.table.filesWritten:
             statement = self.relStatementPat % (self.periodicCommit,
                                                 filename, pkLabel,
                                                 pkCols, fkLabel,
                                                 fkCols, relType)
-            print statement
+            LOG.debug(statement)
             self.graphDb.cypher.run(statement)
 
 

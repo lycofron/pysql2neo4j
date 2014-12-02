@@ -104,7 +104,3 @@ def getHandler(saCol):
     else:
         h = sqlTypeHandler
     return h
-
-if __name__ == '__main__':
-    for cls in getSubclassesDeep(sqlTypeHandler):
-        print cls
