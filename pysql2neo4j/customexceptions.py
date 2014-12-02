@@ -21,7 +21,3 @@ class DBUnreadableException(pysql2graphException):
 
 class DBInsufficientPrivileges(pysql2graphException):
     pass
-
-
-class WorkflowException(pysql2graphException):
-    pass

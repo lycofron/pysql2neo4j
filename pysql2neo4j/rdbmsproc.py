@@ -15,7 +15,7 @@ from configman import getSqlDbUri, confDict
 from csvproc import CsvHandler
 from utils import listUnique
 from customexceptions import DBInsufficientPrivileges, DbNotFoundException
-from customexceptions import DBUnreadableException, WorkflowException
+from customexceptions import DBUnreadableException
 from datatypes import getHandler
 
 _transformRelTypes = lambda x: x
@@ -149,7 +149,8 @@ def getTestedSQLDatabase(dburi, tryWrite=False):
         conn = engine.connect()
         insp = reflection.Inspector.from_engine(engine)
     except Exception as ex:
-        raise DbNotFoundException(ex, "Could not connect to DB %s." % dburi)
+        raise DbNotFoundException(ex, "Could not connect to SQL DB %s."
+                                  % dburi)
     try:
         meta = MetaData()
         meta.reflect(bind=engine)
@@ -160,11 +161,9 @@ def getTestedSQLDatabase(dburi, tryWrite=False):
         result = conn.execute(s)
         _ = result.fetchone()
     except Exception as ex:
-        raise  DBUnreadableException(ex, "Could not SELECT on DB %s." % dburi)
+        raise  DBUnreadableException(ex, "Could not SELECT on SQL DB %s."
+                                     % dburi)
     if tryWrite:
-        if insp.get_table_names():
-            raise WorkflowException("DB %s is not empty." % dburi)
-
         try:
             md = MetaData()
             testTable = Table('example', md,
@@ -185,6 +184,6 @@ def getTestedSQLDatabase(dburi, tryWrite=False):
             conn.execute(testTable.delete())
             testTable.drop(bind=engine)
         except Exception as ex:
-            raise DBInsufficientPrivileges("Exception while testing trivial operations in DB %s."
-                                           % dburi)
+            raise DBInsufficientPrivileges(\
+                    "Failed on trivial operations in DB %s." % dburi)
     return conn, insp

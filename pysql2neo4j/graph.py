@@ -1,7 +1,7 @@
 import string
 from py2neo import Graph, authenticate
 from py2neo import Node
-from customexceptions import DBUnreadableException, DBInsufficientPrivileges
+from customexceptions import DbNotFoundException, DBInsufficientPrivileges
 from configman import getGraphDBUri, getGraphDBCredentials, confDict
 
 
@@ -81,14 +81,15 @@ def getTestedNeo4jDB(graphDBurl, graphDbCredentials):
             authenticate(*graphDbCredentials)
         graphDb = Graph(graphDBurl)
     except Exception as ex:
-        raise DBUnreadableException(ex, "Could not connect to graphDb database.")
+        raise DbNotFoundException(ex, "Could not connect to Graph DB %s."
+                                  % graphDBurl)
 
     try:
         test_node = Node("TEST", data="whatever")
         graphDb.create(test_node)
         graphDb.delete(test_node)
     except Exception as ex:
-        raise DBInsufficientPrivileges(ex,
-            "Could not execute simple operations to graphDb database.")
+        raise DBInsufficientPrivileges(\
+                "Failed on trivial operations in DB %s." % graphDBurl)
 
     return graphDb
