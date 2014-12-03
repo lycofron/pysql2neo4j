@@ -7,7 +7,7 @@ Created on 27 Nov 2014
 import unicodecsv as csv
 import os.path
 
-from configman import confDict
+from configman import CSV_DIRECTORY, CSV_ROW_LIMIT
 
 
 def fixPath(path):
@@ -23,8 +23,8 @@ class CsvHandler(object):
         '''
         Constructor
         '''
-        self._csvdir = confDict["csvdir"]
-        self._csvRowLimit = confDict["csvrowlimit"]
+        self._csvdir = CSV_DIRECTORY
+        self._csvRowLimit = CSV_ROW_LIMIT
         self._header = header
         self._name = name
         self._volumeNo = 1

@@ -9,7 +9,7 @@ Created on 24 Apr 2013
 
 from pysql2neo4j.rdbmsproc import SqlDbInfo
 from pysql2neo4j.graph import GraphProc
-from pysql2neo4j.configman import LOG
+from pysql2neo4j.configman import LOG, DRY_RUN
 
 ### Detailed output
 # from py2neo import watch
@@ -20,6 +20,8 @@ if __name__ == '__main__':
     try:
         #Step 0: Initialize
         LOG.info("Initializing...")
+        if DRY_RUN:
+            LOG.info("Performing DRY RUN (no changes will be written).")
         sqlDb = SqlDbInfo()
         graphDb = GraphProc()
 
@@ -42,8 +44,7 @@ if __name__ == '__main__':
         #Phase 4: Create relations
         for t in sqlDb.iterTables:
             LOG.info("Processing foreign keys of table %s..." % t.tableName)
-            for fk in t.fKeys:
-                graphDb.createRelations(fk)
+            graphDb.createRelations(t)
         LOG.info("Terminated")
     except:
         LOG.exception("Terminated abnormally")

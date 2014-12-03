@@ -10,7 +10,7 @@ from sqlalchemy.engine import url
 from urlparse import urlunparse
 
 logging.basicConfig(format='%(asctime)s: %(levelname)s:%(message)s',
-                    level=logging.INFO)
+                    level=logging.DEBUG)
 LOG = logging
 
 __CONFIGFILE = "settings.ini"
@@ -21,23 +21,54 @@ __STANDARD_OPTIONS = ["driver", "host", "port", "schema", "user", "password"]
 
 __config = ConfigParser.RawConfigParser()
 __config.read(__CONFIGFILE)
-confDict = {}
-confDict["csvdir"] = __config.get(__GLOBALSECTION,
-                                            "csvdir")
-confDict["csvrowlimit"] = __config.getint(__GLOBALSECTION,
-                                                   "csvrowlimit")
-confDict["periodiccommitevery"] = __config.getint(__GLOBALSECTION,
-                                                   "periodiccommitevery")
+
+CSV_DIRECTORY = __config.get(__GLOBALSECTION,
+                                            "csv_directory")
+CSV_ROW_LIMIT = __config.getint(__GLOBALSECTION,
+                                                   "csv_row_limit")
+PERIODIC_COMMIT_EVERY = __config.getint(__GLOBALSECTION,
+                                                   "periodic_commit_every")
 try:
-    confDict['labeltransform'] = \
-        __config.get(__GLOBALSECTION, "labeltransform")
+    TRANSFORM_LABEL = \
+        __config.get(__GLOBALSECTION, "label_transform")
 except ConfigParser.NoOptionError:
-    confDict['labeltransform'] = 'capitalize'
+    TRANSFORM_LABEL = 'capitalize'
+
 try:
-    confDict['transformRelTypes'] = \
+    remove_redundant_fields = \
+        __config.getint(__GLOBALSECTION, "remove_redundant_fields")
+except ConfigParser.NoOptionError:
+    remove_redundant_fields = 1
+except ValueError:
+    remove_redundant_fields = 0
+
+REMOVE_REDUNDANT_FIELDS = remove_redundant_fields == 1
+
+try:
+    many_to_many_as_relation = \
+        __config.getint(__GLOBALSECTION, "many_to_many_as_relation")
+except ConfigParser.NoOptionError:
+    many_to_many_as_relation = 1
+except ValueError:
+    many_to_many_as_relation = 0
+
+MANY_TO_MANY_AS_RELATION = many_to_many_as_relation == 1
+
+try:
+    dry_run = \
+        __config.getint(__GLOBALSECTION, "dry_run")
+except ConfigParser.NoOptionError:
+    dry_run = 1
+except ValueError:
+    dry_run = 1
+
+DRY_RUN = dry_run != 0
+
+try:
+    TRANSFORM_REL_TYPES = \
         __config.get(__GLOBALSECTION, "transformRelTypes")
 except ConfigParser.NoOptionError:
-    confDict['transformRelTypes'] = 'allcaps'
+    TRANSFORM_REL_TYPES = 'allcaps'
 
 
 def getSqlDbUri():

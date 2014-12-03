@@ -6,21 +6,24 @@ Created on 04 May 2013
 
 import string
 from collections import OrderedDict
+from itertools import combinations
 
 from sqlalchemy import create_engine, MetaData, select
 from sqlalchemy.engine import reflection
 from sqlalchemy import Table, Column, Integer
 
-from configman import getSqlDbUri, confDict, LOG
 from csvproc import CsvHandler
 from utils import listUnique, listSubtract, listFlatten
 from customexceptions import DBInsufficientPrivileges, DbNotFoundException
 from customexceptions import DBUnreadableException
 from datatypes import getHandler
+from configman import getSqlDbUri, TRANSFORM_LABEL, TRANSFORM_REL_TYPES
+from configman import LOG, DRY_RUN, MANY_TO_MANY_AS_RELATION
+from configman import REMOVE_REDUNDANT_FIELDS
 
 _transformRelTypes = lambda x: x
 
-if confDict['transformRelTypes'] == 'allcaps':
+if TRANSFORM_REL_TYPES == 'allcaps':
     _transformRelTypes = string.upper
 
 
@@ -30,7 +33,7 @@ class SqlDbInfo(object):
         connection, inspector = getTestedSQLDatabase(sqldburi)
         self.connection = connection
         self.inspector = inspector
-        labelTransform = confDict['labeltransform']
+        labelTransform = TRANSFORM_LABEL
         if labelTransform == 'capitalize':
             self.labelTransform = self.capitalize
         else:
@@ -41,6 +44,25 @@ class SqlDbInfo(object):
         for tableObject in self.tables.values():
             tableObject._resolveForeignKeys()
             tableObject._setIndexedCols()
+        self._ensureUniqRelTypes()
+
+    def _ensureUniqRelTypes(self):
+        '''There may be synonym relation types refering to different foreign
+        keys or even different many-to-many tables. Here we will ensure that
+        this will not happen'''
+        m2mTables = [tbl for tbl in self.tables.values() \
+                     if tbl.isManyToMany()]
+        allFKeys = [tbl.fKeys for tbl in self.tables.values() \
+                     if not tbl.isManyToMany()]
+        allRelObjects = listFlatten(allFKeys)
+        allRelObjects.extend(m2mTables)
+        for i, (obj1, obj2) in enumerate(combinations(allRelObjects, 2)):
+            assert hasattr(obj1, 'relType') and \
+                hasattr(obj2, 'relType')
+            if obj1.relType == obj2.relType:
+                #Silly, but it should work
+                obj1.relType = obj1.relType + str(i * 2)
+                obj2.relType = obj2.relType + str(i * 2 + 1)
 
     @property
     def iterTables(self):
@@ -94,7 +116,17 @@ class TableInfo(object):
         self.fKeysCols = OrderedDict()
         for name in fkeycolsUniq:
             self.fKeysCols[name] = self.cols[name]
+            self.cols[name].isFkCol = True
         self.refTables = [k.refTable for k in self.fKeys]
+        if self.isManyToMany():
+            relType = "%s_%s" % (self.fKeys[0].refTable.labelName,
+                                 self.fKeys[1].refTable.labelName)
+            self.relType = _transformRelTypes(relType)
+        if REMOVE_REDUNDANT_FIELDS:
+            self.importCols = {k: v for k, v in self.cols.items() \
+                          if not v.isRedundant()}
+        else:
+            self.importCols = self.cols
 
     def _setIndexedCols(self):
         uniq = self.sqlDb.inspector.get_unique_constraints(self.tableName)
@@ -113,23 +145,32 @@ class TableInfo(object):
         idxColNames = listSubtract(listUnique(listFlatten(idxCols)),
                                     uniqColNames)
         self.uniqCols = [self.cols[x] for x in uniqColNames]
-        self.idxCols = [self.cols[x] for x in idxColNames]
-        LOG.debug("Unique constraints on columns %s" % str(uniqColNames))
-        LOG.debug("Indexes on columns %s" % str(idxColNames))
+        if REMOVE_REDUNDANT_FIELDS:
+            self.idxCols = [self.cols[x] for x in idxColNames \
+                            if not self.cols[x].isRedundant()]
+        else:
+            self.idxCols = [self.cols[x] for x in idxColNames]
+        LOG.debug("Unique constraints on table %s, columns %s" %
+                  (self.tableName, str([x.name for x in self.uniqCols])))
+        LOG.debug("Indexes on table %s, columns %s" %
+                  (self.tableName, str([x.name for x in self.idxCols])))
 
     def iterRows(self):
         for r in self.sqlDb.connection.execute(self.query):
             yield r
 
     def export(self):
-        header = [x for x in self.cols.keys()]
-        csvFileWriter = CsvHandler(self.tableName, header)
-        for rowData in self.iterRows():
-            csvData = [v.expFunc(rowData[k]) \
-                       for k, v in self.cols.items()]
-            csvFileWriter.writeRow(csvData)
-        csvFileWriter.close()
-        self.filesWritten = csvFileWriter.getFilesWritten()
+        if not DRY_RUN:
+            header = [x for x in self.cols.keys()]
+            csvFileWriter = CsvHandler(self.tableName, header)
+            for rowData in self.iterRows():
+                csvData = [v.expFunc(rowData[k]) \
+                           for k, v in self.cols.items()]
+                csvFileWriter.writeRow(csvData)
+            csvFileWriter.close()
+            self.filesWritten = csvFileWriter.getFilesWritten()
+        else:
+            self.filesWritten = ['DUMMY_FILE']
 
     def hasCompositePK(self):
         return len(self.pkCols) > 1
@@ -153,7 +194,14 @@ class ColumnInfo(object):
         self.__handler = getHandler(saCol)
         self.expFunc = lambda x: self.__handler.expFunc(x)
         self.impFunc = lambda x: self.__handler.impFunc(x)
-        self.isPKeyCol = None
+        self.isPkCol = None
+        self.isFkCol = False
+
+    def isRedundant(self):
+        if MANY_TO_MANY_AS_RELATION and self.table.isManyToMany():
+            return self.isFkCol
+        else:
+            return self.isFkCol and (not self.isPkCol)
 
 
 class ForeignKeyInfo(object):
@@ -195,27 +243,37 @@ def getTestedSQLDatabase(dburi, tryWrite=False):
     except Exception as ex:
         raise  DBUnreadableException(ex, "Could not SELECT on SQL DB %s."
                                      % dburi)
-    if tryWrite:
-        try:
-            md = MetaData()
-            testTable = Table('example', md,
-                              Column('id', Integer, primary_key=True))
-            md.create_all(engine)
-        except Exception as ex:
-            raise DBInsufficientPrivileges(ex,
+    if not DRY_RUN:
+        if tryWrite:
+            try:
+                md = MetaData()
+                testTable = Table('example', md,
+                                  Column('id', Integer, primary_key=True))
+                md.create_all(engine)
+            except Exception as ex:
+                raise DBInsufficientPrivileges(ex,
                                            "Failed to create table in DB %s ."
-                                           % dburi)
+                                               % dburi)
 
-        try:
-            ins = testTable.insert().values(id=1)
-            _ = conn.execute(ins)
-            s = select([testTable])
-            _ = conn.execute(s)
-            stmt = testTable.update().values(id=2)
-            conn.execute(stmt)
-            conn.execute(testTable.delete())
-            testTable.drop(bind=engine)
-        except Exception as ex:
-            raise DBInsufficientPrivileges(\
-                    "Failed on trivial operations in DB %s." % dburi)
+            try:
+                ins = testTable.insert().values(id=1)
+                _ = conn.execute(ins)
+                s = select([testTable])
+                _ = conn.execute(s)
+                stmt = testTable.update().values(id=2)
+                conn.execute(stmt)
+                conn.execute(testTable.delete())
+                testTable.drop(bind=engine)
+            except Exception as ex:
+                raise DBInsufficientPrivileges(\
+                        "Failed on trivial operations in DB %s." % dburi)
     return conn, insp
+
+
+def m2mWithSameRef(tbl1, tbl2):
+    assert len(tbl1.fKeys) == 2 and len(tbl2.fKeys) == 2
+    return tbl1 != tbl2 and \
+        ((tbl1.fKeys[0] == tbl2.fKeys[0] \
+          and tbl1.fKeys[1] == tbl2.fKeys[1]) or
+         (tbl1.fKeys[0] == tbl2.fKeys[1] \
+          and tbl1.fKeys[1] == tbl2.fKeys[0]))
