@@ -37,6 +37,7 @@ By default, the script will only simulate the process and will not perform any c
  * csv files are imported into Neo4j
  * Constraints or indexes are created for each primary key
  * relations are imported
+ * the model of imported data is created as a graph, for reference
 
 ### What it does (in detail):
 
@@ -49,6 +50,8 @@ For each CSV file that was exported, a corresponding Cypher command is issued to
 Then constraints and indexes are created. Single-field primary keys and unique indexes are directly converted to unique constraints in Neo4j. Composite primary keys and unique indexes, are converted to multiple single-field indexes.
 
 In the last step, using the same CSV files, relations are created. The relationship type is all caps, in the form of REFERENCED_REFERENCING and with direction from referenced to referencing.
+
+In addition to the above, the script will create a graph representation of the structure of imported data. The nodes will have two labels (*Pysql2neo4j* and *SchemaInfo*) with table name as property *\_\_tablename*. They will be connected by the relationships that are connecting the corresponding nodes. Relationships will have their name as *property \_\_relationType*. The other properties will be in the form *sourceTable.sourceField : destinationTable.destinationField*.
 
 ### Transformations in schema
 
