@@ -160,17 +160,14 @@ class TableInfo(object):
             yield r
 
     def export(self):
-        if not DRY_RUN:
-            header = [x for x in self.cols.keys()]
-            csvFileWriter = CsvHandler(self.tableName, header)
-            for rowData in self.iterRows():
-                csvData = [v.expFunc(rowData[k]) \
-                           for k, v in self.cols.items()]
-                csvFileWriter.writeRow(csvData)
-            csvFileWriter.close()
-            self.filesWritten = csvFileWriter.getFilesWritten()
-        else:
-            self.filesWritten = ['DUMMY_FILE']
+        header = [x for x in self.cols.keys()]
+        csvFileWriter = CsvHandler(self.tableName, header)
+        for rowData in self.iterRows():
+            csvData = [v.expFunc(rowData[k]) \
+                       for k, v in self.cols.items()]
+            csvFileWriter.writeRow(csvData)
+        csvFileWriter.close()
+        self.filesWritten = csvFileWriter.getFilesWritten()
 
     def hasCompositePK(self):
         return len(self.pkCols) > 1

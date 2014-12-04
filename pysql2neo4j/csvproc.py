@@ -5,9 +5,9 @@ Created on 27 Nov 2014
 '''
 
 import unicodecsv as csv
-import os.path
+from os import path, devnull
 
-from configman import CSV_DIRECTORY, CSV_ROW_LIMIT
+from configman import CSV_DIRECTORY, CSV_ROW_LIMIT, DRY_RUN
 
 
 def fixPath(path):
@@ -32,10 +32,13 @@ class CsvHandler(object):
         self._getWriter()
 
     def _getWriter(self):
-        csvFileName = os.path.join(self._csvdir,
+        self._csvFileName = path.join(self._csvdir,
                                    self._name + "%d.csv" %
                                    self._volumeNo)
-        self._csvFile = open(csvFileName, "wb")
+        if DRY_RUN:
+            self._csvFile = open(devnull, "wb")
+        else:
+            self._csvFile = open(self._csvFileName, "wb")
         self._csvRowCounter = 0
         self._csvWriter = csv.writer(self._csvFile)
         #Header
@@ -47,7 +50,7 @@ class CsvHandler(object):
         self._getWriter()
 
     def close(self):
-        self._filesWritten.append(fixPath(self._csvFile.name))
+        self._filesWritten.append(fixPath(self._csvFileName))
         self._csvFile.close()
 
     def writeRow(self, row):

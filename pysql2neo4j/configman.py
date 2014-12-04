@@ -35,34 +35,34 @@ except ConfigParser.NoOptionError:
     TRANSFORM_LABEL = 'capitalize'
 
 try:
-    remove_redundant_fields = \
+    _remove_redundant_fields = \
         __config.getint(__GLOBALSECTION, "remove_redundant_fields")
 except ConfigParser.NoOptionError:
-    remove_redundant_fields = 1
+    _remove_redundant_fields = 1
 except ValueError:
-    remove_redundant_fields = 0
+    _remove_redundant_fields = 0
 
-REMOVE_REDUNDANT_FIELDS = remove_redundant_fields == 1
+REMOVE_REDUNDANT_FIELDS = _remove_redundant_fields == 1
 
 try:
-    many_to_many_as_relation = \
+    _many_to_many_as_relation = \
         __config.getint(__GLOBALSECTION, "many_to_many_as_relation")
 except ConfigParser.NoOptionError:
-    many_to_many_as_relation = 1
+    _many_to_many_as_relation = 1
 except ValueError:
-    many_to_many_as_relation = 0
+    _many_to_many_as_relation = 0
 
-MANY_TO_MANY_AS_RELATION = many_to_many_as_relation == 1
+MANY_TO_MANY_AS_RELATION = _many_to_many_as_relation == 1
 
 try:
-    dry_run = \
+    _dry_run = \
         __config.getint(__GLOBALSECTION, "dry_run")
 except ConfigParser.NoOptionError:
-    dry_run = 1
+    _dry_run = 1
 except ValueError:
-    dry_run = 1
+    _dry_run = 1
 
-DRY_RUN = dry_run != 0
+DRY_RUN = _dry_run != 0
 
 try:
     TRANSFORM_REL_TYPES = \

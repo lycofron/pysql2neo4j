@@ -18,6 +18,10 @@ CREATE (src)-[:%s%s]->(dest)"""
         self.graphDb = getTestedNeo4jDB(graphDbUrl, graphDbCredentials)
         self.periodicCommit = PERIODIC_COMMIT_EVERY
 
+    def cypher_exec(self, statement):
+        if not DRY_RUN:
+            self.graphDb.cypher.execute(statement)
+
     def importTableCsv(self, tableObj):
         if not (tableObj.isManyToMany() \
            and MANY_TO_MANY_AS_RELATION):
@@ -36,8 +40,7 @@ CREATE (src)-[:%s%s]->(dest)"""
                 "FROM 'file:%s' AS csvLine " % f
                 cypherQuery = periodicCommitClause + importClause + \
                                 createClause
-                if not DRY_RUN:
-                    self.graphDb.cypher.run(cypherQuery)
+                self.cypher_exec(cypherQuery)
         else:
             LOG.info("Skipping many-to-many table %s..." % tableObj.labelName)
 
@@ -48,8 +51,7 @@ CREATE (src)-[:%s%s]->(dest)"""
             statement = """create constraint on (n:%s)
             assert n.%s is unique""" % (label, col.name)
             LOG.debug(statement)
-            if not DRY_RUN:
-                self.graphDb.cypher.run(statement)
+            self.cypher_exec(statement)
 
     def createIndexes(self, tableObj):
         label = tableObj.labelName
@@ -57,8 +59,7 @@ CREATE (src)-[:%s%s]->(dest)"""
         for col in tableObj.idxCols:
             statement = "create index on :%s(%s)" % (label, col.name)
             LOG.debug(statement)
-            if not DRY_RUN:
-                self.graphDb.cypher.run(statement)
+            self.cypher_exec(statement)
 
     def createRelations(self, tableObj):
         if MANY_TO_MANY_AS_RELATION and (not tableObj.isManyToMany()):
@@ -88,8 +89,7 @@ CREATE (src)-[:%s%s]->(dest)"""
                                                 pkCols, fkLabel,
                                                 fkCols, relType, "")
             LOG.debug(statement)
-            if not DRY_RUN:
-                self.graphDb.cypher.run(statement)
+            self.cypher_exec(statement)
 
     def manyToManyRelations(self, tableObj):
         assert len(tableObj.fKeys) == 2
@@ -122,8 +122,7 @@ CREATE (src)-[:%s%s]->(dest)"""
                                                 pk2Cols, pk1Label,
                                                 pk1Cols, relType, colClause)
             LOG.debug(statement)
-            if not DRY_RUN:
-                self.graphDb.cypher.run(statement)
+            self.cypher_exec(statement)
 
 
 def getTestedNeo4jDB(graphDBurl, graphDbCredentials):
