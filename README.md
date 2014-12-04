@@ -24,9 +24,11 @@ So, here it is. This script is meant to extract an SQL database and migrate its 
    - must declare a primary key on every table
    - must have all foreign keys declared
 
+(Well, I understand that the aforementioned requirements leave out approximately 95% of Real World databases :) )
+
 ### Dry run
 
-By default, the script will only simulate the process and will not perform any change nor will it download any data. To perform changes, you need to set the flag "dry_run" on settings.ini to 0.
+By default, the script will only simulate the process and will not perform any changes. To perform changes, you need to set the flag "dry_run" on settings.ini to 0.
 
 ### What it does (in brief):
 
