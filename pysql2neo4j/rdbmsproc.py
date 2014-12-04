@@ -183,6 +183,32 @@ class TableInfo(object):
             len(listSubtract(self.pkCols.keys(), self.fKeysCols.keys())) == 0 \
             and len(self.depTables) == 0
 
+    def asNodeInfo(self):
+        if self.isManyToMany():
+            return None
+        else:
+            labels = ["Pysql2neo4j", "SchemaInfo"]
+            cols = {c: self.labelName for c in self.importCols.keys()}
+            # Hope you don't have any table
+            # with a field named __tablename
+            cols["__tablename"] = self.labelName
+            return labels, cols
+
+    def asRelInfo(self):
+        if self.isManyToMany():
+            srcRefCols = self.fKeys[0].refCols.keys()
+            destRefCols = self.fKeys[1].refCols.keys()
+            srcRefColsFQ = [self.fKeys[0].refTable.labelName + "." + i
+                            for i in srcRefCols]
+            destRefColsFQ = [self.fKeys[1].refTable.labelName + "." + i
+                             for i in destRefCols]
+            properties = {k: v for k, v in zip(srcRefColsFQ, destRefColsFQ)}
+            properties['__relationType'] = self.relType
+            return self.fKeys[0].refTable.labelName, self.relType, \
+                    self.fKeys[1].refTable.labelName, properties
+        else:
+            return None
+
 
 class ColumnInfo(object):
     def __init__(self, saCol, table):
@@ -214,6 +240,19 @@ class ForeignKeyInfo(object):
             self.refCols[colName] = self.refTable.cols[colName]
         relType = "%s_%s" % (self.refTable.labelName, self.table.labelName)
         self.relType = _transformRelTypes(relType)
+
+    def asRelInfo(self):
+        if self.table.isManyToMany():
+            return None
+        else:
+            srcRefColsFQ = [self.refTable.labelName + "." + i
+                            for i in self.refCols.keys()]
+            destRefColsFQ = [self.table.labelName + "." + i
+                            for i in self.consCols.keys()]
+            properties = {k: v for k, v in zip(srcRefColsFQ, destRefColsFQ)}
+            properties['__relationType'] = self.relType
+            return self.refTable.labelName, self.relType, \
+                    self.table.labelName, properties
 
 
 def getTestedSQLDatabase(dburi, tryWrite=False):

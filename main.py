@@ -10,7 +10,7 @@ Created on 24 Apr 2013
 from pysql2neo4j.rdbmsproc import SqlDbInfo
 from pysql2neo4j.graph import GraphProc
 from pysql2neo4j.configman import LOG, DRY_RUN
-
+from py2neo import Node, Relationship
 ### Detailed output
 # from py2neo import watch
 # watch("httpstream")
@@ -41,10 +41,36 @@ if __name__ == '__main__':
 
         LOG.info("\nFinished import.\n\nAdding relations...")
 
-        #Phase 4: Create relations
+        #Step 4: Create relations
         for t in sqlDb.iterTables:
             LOG.info("Processing foreign keys of table %s..." % t.tableName)
             graphDb.createRelations(t)
+
+        #Step 5: Courtesy representation of graph model :)
+        tableNodes = dict()
+        for t in sqlDb.iterTables:
+            r = t.asNodeInfo()
+            if r:
+                labels, properties = r
+                tableNodes[t.labelName] = Node(*labels, **properties)
+        if not DRY_RUN:
+            graphDb.graphDb.create(*tableNodes.values())
+        relations = list()
+        for t in sqlDb.iterTables:
+            r = t.asRelInfo()
+            if r:
+                src, relType, dest, properties = r
+                relations.append(Relationship(tableNodes[src], relType,
+                                              tableNodes[dest], **properties))
+            for fk in t.fKeys:
+                r = fk.asRelInfo()
+                if r:
+                    src, relType, dest, properties = r
+                relations.append(Relationship(tableNodes[src], relType,
+                                              tableNodes[dest], **properties))
+        if not DRY_RUN:
+            graphDb.graphDb.create(*relations)
+
         LOG.info("Terminated")
     except:
         LOG.exception("Terminated abnormally")
