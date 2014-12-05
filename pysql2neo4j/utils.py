@@ -23,6 +23,7 @@ def listSubtract(seqFrom, seq):
 
 
 def listFlattenIter(seq):
+    '''Unnest list. Returns: iterator'''
     for x in seq:
         if hasattr(x, '__iter__'):
             for y in listFlattenIter(x):
@@ -32,6 +33,7 @@ def listFlattenIter(seq):
 
 
 def listFlatten(seq):
+    '''Unnest list. Returns: list'''
     return [x for x in listFlattenIter(seq)]
 
 
@@ -45,3 +47,17 @@ def unix_time(dt):
 def getUnixTime(dt):
     '''returns milliseconds elapsed from unix epoch'''
     return int(unix_time(dt)) * 1000
+
+
+def fixPath(path):
+    '''Fix windows backslashes on paths'''
+    return path.replace('\\', '/')
+
+
+def getSubclassesDeep(cls):
+    '''Given a class, get all its subclasses from all levels.
+    Return: iterator'''
+    for subcls in cls.__subclasses__():
+        for subsubcls in getSubclassesDeep(subcls):
+            yield subsubcls
+    yield cls

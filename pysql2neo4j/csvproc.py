@@ -8,20 +8,17 @@ import unicodecsv as csv
 from os import path, devnull
 
 from configman import CSV_DIRECTORY, CSV_ROW_LIMIT, DRY_RUN
-
-
-def fixPath(path):
-    return path.replace('\\', '/')
+from utils import fixPath
 
 
 class CsvHandler(object):
     '''
-    Class to handle operations with CSV files
+    Class to handle operations with CSV files. This is a black box. It receives
+    rows of data, it outputs a list of written files.
     '''
 
     def __init__(self, name, header):
-        '''
-        Constructor
+        '''Constructor.
         '''
         self._csvdir = CSV_DIRECTORY
         self._csvRowLimit = CSV_ROW_LIMIT
@@ -32,6 +29,8 @@ class CsvHandler(object):
         self._getWriter()
 
     def _getWriter(self):
+        ''''Open a new file to write.'''
+        #MAYBE: Check if file exists
         self._csvFileName = path.join(self._csvdir,
                                    self._name + "%d.csv" %
                                    self._volumeNo)
@@ -45,15 +44,18 @@ class CsvHandler(object):
         self._csvWriter.writerow(self._header)
 
     def _next(self):
+        '''Proceed to next output file.'''
         self.close()
         self._volumeNo += 1
         self._getWriter()
 
     def close(self):
-        self._filesWritten.append(fixPath(self._csvFileName))
+        '''Close current file stream.'''
         self._csvFile.close()
+        self._filesWritten.append(fixPath(self._csvFileName))
 
     def writeRow(self, row):
+        '''Write a single row, respecting row limits'''
         self._csvRowCounter += 1
         if self._csvRowCounter > self._csvRowLimit:
             self._csvRowCounter = 1
@@ -61,4 +63,5 @@ class CsvHandler(object):
         self._csvWriter.writerow(row)
 
     def getFilesWritten(self):
+        '''Return: all files that have been written and closed so far.'''
         return self._filesWritten

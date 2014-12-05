@@ -13,6 +13,7 @@ logging.basicConfig(format='%(asctime)s: %(levelname)s:%(message)s',
                     level=logging.DEBUG)
 LOG = logging
 
+#meta-configuration
 __CONFIGFILE = "settings.ini"
 __GLOBALSECTION = 'GLOBAL'
 __SQLDBSECTION = 'SQL_DB'
@@ -22,48 +23,53 @@ __STANDARD_OPTIONS = ["driver", "host", "port", "schema", "user", "password"]
 __config = ConfigParser.RawConfigParser()
 __config.read(__CONFIGFILE)
 
+#Required
+#MAYBE: Check directory is valid
 CSV_DIRECTORY = __config.get(__GLOBALSECTION,
                                             "csv_directory")
+
+#Required, int
 CSV_ROW_LIMIT = __config.getint(__GLOBALSECTION,
                                                    "csv_row_limit")
+
+#TODO: Should be optional
 PERIODIC_COMMIT_EVERY = __config.getint(__GLOBALSECTION,
                                                    "periodic_commit_every")
+#Optional, default Capitalize
 try:
     TRANSFORM_LABEL = \
         __config.get(__GLOBALSECTION, "label_transform")
 except ConfigParser.NoOptionError:
     TRANSFORM_LABEL = 'capitalize'
 
+#Optional, default True
 try:
     _remove_redundant_fields = \
         __config.getint(__GLOBALSECTION, "remove_redundant_fields")
-except ConfigParser.NoOptionError:
+except (ConfigParser.NoOptionError, ValueError):
     _remove_redundant_fields = 1
-except ValueError:
-    _remove_redundant_fields = 0
 
 REMOVE_REDUNDANT_FIELDS = _remove_redundant_fields == 1
 
+#Optional, default True
 try:
     _many_to_many_as_relation = \
         __config.getint(__GLOBALSECTION, "many_to_many_as_relation")
-except ConfigParser.NoOptionError:
+except (ConfigParser.NoOptionError, ValueError):
     _many_to_many_as_relation = 1
-except ValueError:
-    _many_to_many_as_relation = 0
 
 MANY_TO_MANY_AS_RELATION = _many_to_many_as_relation == 1
 
+#Optional, default True
 try:
     _dry_run = \
         __config.getint(__GLOBALSECTION, "dry_run")
-except ConfigParser.NoOptionError:
-    _dry_run = 1
-except ValueError:
+except (ConfigParser.NoOptionError, ValueError):
     _dry_run = 1
 
 DRY_RUN = _dry_run != 0
 
+#Optional, default ALLCAPS
 try:
     TRANSFORM_REL_TYPES = \
         __config.get(__GLOBALSECTION, "transformRelTypes")
@@ -72,6 +78,9 @@ except ConfigParser.NoOptionError:
 
 
 def getSqlDbUri():
+    '''Reads SQL DB configuration from settings.ini
+    See: http://docs.sqlalchemy.org/en/rel_0_9/core/engines.html#database-urls
+    Return: sqlalchemy.engine.url.URL: sql db connection string'''
     driver = __config.get(__SQLDBSECTION, "driver")
     host = __config.get(__SQLDBSECTION, "host")
     try:
@@ -89,6 +98,8 @@ def getSqlDbUri():
 
 
 def __getGraphNetLoc():
+    '''Get network location of a url from settings.ini.
+    Default is localhost:7474'''
     try:
         host = __config.get(__GRAPHDBSECTION, "host")
     except:
@@ -101,6 +112,7 @@ def __getGraphNetLoc():
 
 
 def getGraphDBUri():
+    '''Get Neo4j URI from settings.ini'''
     protocol = "http"
     netLoc = __getGraphNetLoc()
     try:
@@ -112,6 +124,7 @@ def getGraphDBUri():
 
 
 def getGraphDBCredentials():
+    '''Get Neo4j credentials from settings.ini, if there are any'''
     netLoc = __getGraphNetLoc()
     try:
         user = __config.get(__GRAPHDBSECTION, "user")

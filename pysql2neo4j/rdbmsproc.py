@@ -21,6 +21,7 @@ from configman import getSqlDbUri, TRANSFORM_LABEL, TRANSFORM_REL_TYPES
 from configman import LOG, DRY_RUN, MANY_TO_MANY_AS_RELATION
 from configman import REMOVE_REDUNDANT_FIELDS
 
+#Decide here what to do with relation types
 _transformRelTypes = lambda x: x
 
 if TRANSFORM_REL_TYPES == 'allcaps':
@@ -28,19 +29,23 @@ if TRANSFORM_REL_TYPES == 'allcaps':
 
 
 class SqlDbInfo(object):
+    '''Handles communication with SQL DB.'''
+
     def __init__(self):
+        '''Constructor'''
         sqldburi = getSqlDbUri()
         connection, inspector = getTestedSQLDatabase(sqldburi)
         self.connection = connection
         self.inspector = inspector
-        labelTransform = TRANSFORM_LABEL
-        if labelTransform == 'capitalize':
+        if TRANSFORM_LABEL == 'capitalize':
             self.labelTransform = self.capitalize
         else:
             self.labelTransform = self.noTransform
         allTables = {tableName: TableInfo(self, tableName) \
                      for tableName in self.inspector.get_table_names()}
         self.tables = allTables
+        #Processes below will behave as intended only after all tables
+        #have been instantiated
         for tableObject in self.tables.values():
             tableObject._resolveForeignKeys()
             tableObject._setIndexedCols()
@@ -49,7 +54,9 @@ class SqlDbInfo(object):
     def _ensureUniqRelTypes(self):
         '''There may be synonym relation types refering to different foreign
         keys or even different many-to-many tables. Here we will ensure that
-        this will not happen'''
+        this will not happen. IMPORTANT:This should be called only after all
+        foreign keys have been instantiated.'''
+        #Get all objects that will be imported as relationships
         m2mTables = [tbl for tbl in self.tables.values() \
                      if tbl.isManyToMany()]
         allFKeys = [tbl.fKeys for tbl in self.tables.values() \
@@ -60,29 +67,39 @@ class SqlDbInfo(object):
             assert hasattr(obj1, 'relType') and \
                 hasattr(obj2, 'relType')
             if obj1.relType == obj2.relType:
-                #Silly, but it should work
+                #Silly, but it works
                 obj1.relType = obj1.relType + str(i * 2)
                 obj2.relType = obj2.relType + str(i * 2 + 1)
 
     @property
-    def iterTables(self):
+    def tableList(self):
+        '''list of tables'''
         return self.tables.values()
 
     def export(self):
+        '''Export all tables'''
+        #MAYBE: Should this really even exist?
         for tblName, tblObject in self.tables.items():
             LOG.info("Exporting %s..." % tblName)
             tblObject.export()
 
     def capitalize(self, tableName):
+        '''Capitalize behaviour of self.labelTransform'''
         return string.capitalize(tableName)
 
     def noTransform(self, tableName):
+        '''Do-nothing behaviour of self.labelTransform'''
         return tableName
 
 
 class TableInfo(object):
+    '''Holds all necessary Table metadata'''
 
     def __init__(self, sqlDb, tableName):
+        '''Constructor.
+        Parameters:
+            - sqlDb: SqlInfo: the SQL Database
+            - tableName: string'''
         meta = MetaData()
         self.sqlDb = sqlDb
         saTableMetadata = Table(tableName, meta)
@@ -104,23 +121,30 @@ class TableInfo(object):
                 col.isPkCol = True
             else:
                 col.isPkCol = False
+        #Fetch foreign keys, keep for later
         self._fKeysSA = self.sqlDb.inspector.get_foreign_keys(self.tableName)
 
     def _resolveForeignKeys(self):
+        '''Links foreign keys to other tables. MUST be called AFTER all
+        tables have been instantiated as TableInfo objects'''
         fkeycols = []
         self.fKeys = list()
         for fk in self._fKeysSA:
             self.fKeys.append(ForeignKeyInfo(fk, self))
             fkeycols.extend(fk['constrained_columns'])
+        #Find all columns of the table that belong to some foreign key
         fkeycolsUniq = listUnique(fkeycols) if self._fKeysSA else list()
         self.fKeysCols = OrderedDict()
         for name in fkeycolsUniq:
             self.fKeysCols[name] = self.cols[name]
             self.cols[name].isFkCol = True
-        self.refTables = [k.refTable for k in self.fKeys]
+        #All tables this table refers to
+        self.refTables = listUnique([k.refTable for k in self.fKeys])
+        #Processes below can not be called earlier than that
         if self.isManyToMany():
             relType = "%s_%s" % (self.fKeys[0].refTable.labelName,
                                  self.fKeys[1].refTable.labelName)
+            #relType attribute is set ONLY for such tables
             self.relType = _transformRelTypes(relType)
         if REMOVE_REDUNDANT_FIELDS:
             self.importCols = {k: v for k, v in self.cols.items() \
@@ -129,22 +153,29 @@ class TableInfo(object):
             self.importCols = self.cols
 
     def _setIndexedCols(self):
+        '''Decides which fields must be indexed, based on key and index
+        information.'''
+        #Find all columns that are indexed or unique indexed
         uniq = self.sqlDb.inspector.get_unique_constraints(self.tableName)
         idx = self.sqlDb.inspector.get_indexes(self.tableName)
+        #Only single-field constraints will be carried over as such
         uniqCols = [x['column_names'] for x in uniq \
                     if len(x['column_names']) == 1]
         idxCols = [x['column_names'] for x in idx]
         idxCols.extend([x['column_names'] for x in uniq \
                         if len(x['column_names']) != 1])
+        #Don't forget primary key constraint
         if len(self.pkCols) == 1:
             uniqCols.append(self.pkCols.keys())
         else:
             idxCols.append(self.pkCols.keys())
 
         uniqColNames = listUnique(listFlatten(uniqCols))
+        #Remove unique constrained columns from columns to be indexed
         idxColNames = listSubtract(listUnique(listFlatten(idxCols)),
                                     uniqColNames)
         self.uniqCols = [self.cols[x] for x in uniqColNames]
+        #Redundant fields are excluded
         if REMOVE_REDUNDANT_FIELDS:
             self.idxCols = [self.cols[x] for x in idxColNames \
                             if not self.cols[x].isRedundant()]
@@ -156,10 +187,13 @@ class TableInfo(object):
                   (self.tableName, str([x.name for x in self.idxCols])))
 
     def iterRows(self):
+        '''Fetch rows of table'''
         for r in self.sqlDb.connection.execute(self.query):
             yield r
 
     def export(self):
+        '''Exports table to a csv file'''
+        #Send header first
         header = [x for x in self.cols.keys()]
         csvFileWriter = CsvHandler(self.tableName, header)
         for rowData in self.iterRows():
@@ -170,20 +204,31 @@ class TableInfo(object):
         self.filesWritten = csvFileWriter.getFilesWritten()
 
     def hasCompositePK(self):
+        '''True if this table has a composite primary key'''
         return len(self.pkCols) > 1
 
     def hasPK(self):
+        '''True if this table has a primary key'''
         return len(self.pkCols) > 0
 
     def hasFkeys(self):
+        '''True if this table has foreign keys'''
         return len(self.fKeys) > 0
 
     def isManyToMany(self):
+        '''True if this table implements a many-to-many relationship.
+        Definition used:
+            - Referring two tables.
+            - Primary key composed exclusively out of foreign keys
+            - There are no tables reffering to this table'''
+        #TODO: Better definition
         return len(self.refTables) == 2 and \
             len(listSubtract(self.pkCols.keys(), self.fKeysCols.keys())) == 0 \
             and len(self.depTables) == 0
 
     def asNodeInfo(self):
+        '''Returns necessary info to create a node out of this table metadata.
+        If this is a many-to-many table, returns None.'''
         if self.isManyToMany():
             return None
         else:
@@ -195,6 +240,8 @@ class TableInfo(object):
             return labels, cols
 
     def asRelInfo(self):
+        '''Returns necessary info to create a relationship out of this table
+        metadata. If this is NOT a many-to-many table, returns None.'''
         if self.isManyToMany():
             srcRefCols = self.fKeys[0].refCols.keys()
             destRefCols = self.fKeys[1].refCols.keys()
@@ -211,7 +258,12 @@ class TableInfo(object):
 
 
 class ColumnInfo(object):
+    '''Holds all necessary Column metadata'''
     def __init__(self, saCol, table):
+        '''Constructor.
+        Parameters:
+            - saCol: column metadata as returned from SQLAlchemy
+            - table: tableInfo object of column's table'''
         self.table = table
         self.name = saCol['name']
         self.__handler = getHandler(saCol)
@@ -221,6 +273,12 @@ class ColumnInfo(object):
         self.isFkCol = False
 
     def isRedundant(self):
+        '''Returns true if this column is a redundant one. Makes sense
+        to call it after all foreign keys have been instantiated.
+        Definition:
+            - Belongs to a foreign key
+            - Does not belong to table's primary key (not applicable to
+            many-to-many tables)'''
         if MANY_TO_MANY_AS_RELATION and self.table.isManyToMany():
             return self.isFkCol
         else:
@@ -228,7 +286,12 @@ class ColumnInfo(object):
 
 
 class ForeignKeyInfo(object):
+    '''Holds all necessary Foreign Key metadata'''
     def __init__(self, fKeyConstr, table):
+        '''Constructor.
+        Parameters
+            - fKeyConstr: foreign key metadata as returned from SQLAlchemy
+            - table: tableInfo object of foreign key's table'''
         self.table = table
         self.refTable = self.table.sqlDb.tables[fKeyConstr['referred_table']]
         self.refTable.depTables.append(self.table)
@@ -242,6 +305,8 @@ class ForeignKeyInfo(object):
         self.relType = _transformRelTypes(relType)
 
     def asRelInfo(self):
+        '''Returns necessary info to create a relationship out of this foreign
+        key metadata.'''
         if self.table.isManyToMany():
             return None
         else:
@@ -304,12 +369,3 @@ def getTestedSQLDatabase(dburi, tryWrite=False):
                 raise DBInsufficientPrivileges(\
                         "Failed on trivial operations in DB %s." % dburi)
     return conn, insp
-
-
-def m2mWithSameRef(tbl1, tbl2):
-    assert len(tbl1.fKeys) == 2 and len(tbl2.fKeys) == 2
-    return tbl1 != tbl2 and \
-        ((tbl1.fKeys[0] == tbl2.fKeys[0] \
-          and tbl1.fKeys[1] == tbl2.fKeys[1]) or
-         (tbl1.fKeys[0] == tbl2.fKeys[1] \
-          and tbl1.fKeys[1] == tbl2.fKeys[0]))
