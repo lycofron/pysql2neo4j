@@ -9,8 +9,9 @@ import logging
 from sqlalchemy.engine import url
 from urlparse import urlunparse
 
+#TODO: Move logging level to settings.ini
 logging.basicConfig(format='%(asctime)s: %(levelname)s:%(message)s',
-                    level=logging.DEBUG)
+                    level=logging.INFO)
 LOG = logging
 
 #meta-configuration

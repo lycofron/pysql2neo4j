@@ -4,19 +4,17 @@ Created on 1 Dec 2014
 @author: theodojo
 '''
 
-from sqlalchemy import types
+from sqlalchemy.sql import sqltypes
 from utils import getUnixTime, getSubclassesDeep
 
 
 #TODO: add dialect-specific data types
-stringTypes = [types.BINARY, types.CHAR, types.NCHAR, types.NVARCHAR,
-               types.TEXT, types.VARBINARY, types.VARCHAR]
-integerTypes = [types.BIGINT, types.INTEGER, types.SMALLINT]
-floatTypes = [types.FLOAT]
-doubleTypes = [types.REAL, types.DECIMAL, types.NUMERIC]
-dateTypes = [types.DATE, types.DATETIME, types.TIME, types.TIMESTAMP]
-booleanTypes = [types.BOOLEAN]
-lobTypes = [types.BLOB, types.CLOB]
+stringTypes = [sqltypes.String]
+integerTypes = [sqltypes.Integer]
+floatTypes = [sqltypes.Numeric]
+dateTypes = [sqltypes.DateTime, sqltypes.Date, sqltypes.Time]
+booleanTypes = [sqltypes.Boolean]
+lobTypes = [sqltypes.LargeBinary, sqltypes.BINARY, sqltypes.VARBINARY]
 
 
 class sqlTypeHandler(object):
@@ -75,14 +73,6 @@ class sqlFloat(sqlTypeHandler):
     def impFunc(cls, x):
         '''Import surrounded by toFloat function'''
         return "toFloat(%s)" % x
-
-
-class sqlDouble(sqlFloat):
-    '''Handler for double-like columns
-    Attributes:
-        typeList: all classes (derived from sqlalchemy.types.TypeEngine)
-        that will be handled as double'''
-    typeList = doubleTypes
 
 
 class sqlDate(sqlInteger):
