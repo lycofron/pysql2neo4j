@@ -4,6 +4,7 @@ from py2neo import Node, Relationship
 from customexceptions import DbNotFoundException, DBInsufficientPrivileges
 from configman import getGraphDBUri, getGraphDBCredentials, DRY_RUN
 from configman import MANY_TO_MANY_AS_RELATION, LOG, PERIODIC_COMMIT_EVERY
+from py2neo.packages.httpstream.http import SocketError
 
 
 class GraphProc(object):
@@ -162,7 +163,9 @@ def getTestedNeo4jDB(graphDBurl, graphDbCredentials):
         #just fetch a Node to check we are connected
         #even in DRY RUN we should check Neo4j connectivity
         _ = iter(graphDb.match(limit=1)).next()
-    except Exception as ex:
+    except StopIteration:
+        pass
+    except SocketError as ex:
         raise DbNotFoundException(ex, "Could not connect to Graph DB %s."
                                   % graphDBurl)
 
