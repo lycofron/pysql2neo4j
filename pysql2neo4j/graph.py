@@ -4,7 +4,14 @@ from py2neo import Node, Relationship
 from customexceptions import DbNotFoundException, DBInsufficientPrivileges
 from configman import getGraphDBUri, getGraphDBCredentials, DRY_RUN
 from configman import MANY_TO_MANY_AS_RELATION, LOG, PERIODIC_COMMIT_EVERY
+from configman import OFFLINE_MODE, _cypher_script_path
 from py2neo.packages.httpstream.http import SocketError
+from os import devnull
+from pysql2neo4j.configman import CYPHER_FILESTREAM
+
+_cypher_stream = devnull
+if OFFLINE_MODE and not DRY_RUN:
+    _cypher_stream = open(_cypher_script_path, "w")
 
 
 class GraphProc(object):
@@ -25,10 +32,16 @@ CREATE (src)-[:%s%s]->(dest)"""
         self.periodicCommit = PERIODIC_COMMIT_EVERY if PERIODIC_COMMIT_EVERY \
                                 else ""
 
+    def __del__(self):
+        _cypher_stream.close()
+
     def cypher_exec(self, statement):
         '''Wrapper to cypher.execute.'''
         if not DRY_RUN:
-            self.graphDb.cypher.execute(statement)
+            if OFFLINE_MODE:
+                CYPHER_FILESTREAM.write(statement)
+            else:
+                self.graphDb.cypher.execute(statement)
 
     def importTableCsv(self, tableObj):
         '''Imports a table to Neo4j.'''
@@ -162,14 +175,16 @@ def getTestedNeo4jDB(graphDBurl, graphDbCredentials):
         graphDb = Graph(graphDBurl)
         #just fetch a Node to check we are connected
         #even in DRY RUN we should check Neo4j connectivity
-        _ = iter(graphDb.match(limit=1)).next()
+        #but not in OFFLINE MODE
+        if not OFFLINE_MODE:
+            _ = iter(graphDb.match(limit=1)).next()
     except StopIteration:
         pass
     except SocketError as ex:
         raise DbNotFoundException(ex, "Could not connect to Graph DB %s."
                                   % graphDBurl)
 
-    if not DRY_RUN:
+    if not DRY_RUN and not OFFLINE_MODE:
         try:
             test_node = Node("TEST", data="whatever")
             graphDb.create(test_node)
@@ -189,7 +204,10 @@ def createModelGraph(sqlDb, graphDb):
             labels, properties = r
             tableNodes[t.labelName] = Node(*labels, **properties)
     if not DRY_RUN:
-        graphDb.graphDb.create(*tableNodes.values())
+        if OFFLINE_MODE:
+            pass
+        else:
+            graphDb.graphDb.create(*tableNodes.values())
     relations = list()
     for t in sqlDb.tableList:
         r = t.asRelInfo()

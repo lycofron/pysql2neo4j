@@ -9,7 +9,7 @@ Created on 24 Apr 2013
 
 from pysql2neo4j.rdbmsproc import SqlDbInfo
 from pysql2neo4j.graph import GraphProc, createModelGraph
-from pysql2neo4j.configman import LOG, DRY_RUN
+from pysql2neo4j.configman import LOG, DRY_RUN, OFFLINE_MODE, CYPHER_FILESTREAM
 ### Detailed output
 # from py2neo import watch
 # watch("httpstream")
@@ -19,8 +19,10 @@ if __name__ == '__main__':
     try:
         #Step 0: Initialize
         LOG.info("Initializing...")
+        if OFFLINE_MODE:
+            LOG.info("Running in OFFLINE mode (producing files to import).")
         if DRY_RUN:
-            LOG.info("Performing DRY RUN (no changes will be written).")
+            LOG.info("Performing DRY RUN (no changes/files will be written).")
         sqlDb = SqlDbInfo()
         graphDb = GraphProc()
 
@@ -46,9 +48,13 @@ if __name__ == '__main__':
             graphDb.createRelations(t)
 
         #Step 5: Courtesy representation of graph model :)
-        createModelGraph(sqlDb, graphDb)
+        #Currently not supported in offline mode
+        if not OFFLINE_MODE:
+            createModelGraph(sqlDb, graphDb)
 
         LOG.info("Terminated")
     except:
         LOG.exception("Unexpected condition!")
         LOG.critical("Terminated abnormally")
+    finally:
+        CYPHER_FILESTREAM.__del__()

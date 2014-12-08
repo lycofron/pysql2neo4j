@@ -84,6 +84,12 @@ except (ConfigParser.NoOptionError, ValueError):
 
 DRY_RUN = _dry_run != 0
 
+OFFLINE_MODE = True
+
+_cypher_script_path = None
+if OFFLINE_MODE:
+    _cypher_script_path = os.path.join(CSV_DIRECTORY, "import.cypher")
+
 #Optional, default ALLCAPS
 try:
     TRANSFORM_REL_TYPES = \
@@ -153,3 +159,19 @@ def getGraphDBCredentials():
         return (netLoc, user, password)
     else:
         return None
+
+
+class CypherScript(object):
+
+    def __init__(self):
+        self._stream = open(_cypher_script_path, "w")
+
+    def __del__(self):
+        if not self._stream.closed:
+            self._stream.flush()
+            self._stream.close()
+
+    def write(self, line):
+        self._stream.write(unicode.rstrip(line, ";\n") + ";\n")
+
+CYPHER_FILESTREAM = CypherScript()
