@@ -6,13 +6,9 @@ Created on 24 Apr 2013
 
 import ConfigParser
 import logging
+import os.path
 from sqlalchemy.engine import url
 from urlparse import urlunparse
-
-#TODO: Move logging level to settings.ini
-logging.basicConfig(format='%(asctime)s: %(levelname)s:%(message)s',
-                    level=logging.INFO)
-LOG = logging
 
 #meta-configuration
 __CONFIGFILE = "settings.ini"
@@ -20,22 +16,40 @@ __GLOBALSECTION = 'GLOBAL'
 __SQLDBSECTION = 'SQL_DB'
 __GRAPHDBSECTION = 'GRAPH_DB'
 __STANDARD_OPTIONS = ["driver", "host", "port", "schema", "user", "password"]
+__LOG_LEVEL_OPTIONS = {'DEBUG': logging.DEBUG, \
+                       'INFO': logging.INFO, \
+                       'WARNING': logging.WARNING, \
+                       'ERROR': logging.ERROR, \
+                       'CRITICAL': logging.CRITICAL, }
 
 __config = ConfigParser.RawConfigParser()
 __config.read(__CONFIGFILE)
 
+#Optional
+try:
+    LOG_LEVEL = __LOG_LEVEL_OPTIONS[__config.get(__GLOBALSECTION, "log_level")]
+except (ConfigParser.NoOptionError, KeyError):
+    LOG_LEVEL = logging.INFO
+
+logging.basicConfig(format='%(asctime)s: %(levelname)s:%(message)s',
+                    level=LOG_LEVEL)
+LOG = logging
+
 #Required
-#MAYBE: Check directory is valid
-CSV_DIRECTORY = __config.get(__GLOBALSECTION,
-                                            "csv_directory")
+CSV_DIRECTORY = __config.get(__GLOBALSECTION, "csv_directory")
+
+if not os.path.isdir(CSV_DIRECTORY):
+    raise IOError("CSV directory is invalid")
 
 #Required, int
-CSV_ROW_LIMIT = __config.getint(__GLOBALSECTION,
-                                                   "csv_row_limit")
+CSV_ROW_LIMIT = __config.getint(__GLOBALSECTION, "csv_row_limit")
 
-#TODO: Should be optional
-PERIODIC_COMMIT_EVERY = __config.getint(__GLOBALSECTION,
+try:
+    PERIODIC_COMMIT_EVERY = __config.getint(__GLOBALSECTION,
                                                    "periodic_commit_every")
+except ConfigParser.NoOptionError:
+    PERIODIC_COMMIT_EVERY = None
+
 #Optional, default Capitalize
 try:
     TRANSFORM_LABEL = \

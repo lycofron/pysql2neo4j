@@ -78,7 +78,6 @@ class SqlDbInfo(object):
 
     def export(self):
         '''Export all tables'''
-        #MAYBE: Should this really even exist?
         for tblName, tblObject in self.tables.items():
             LOG.info("Exporting %s..." % tblName)
             tblObject.export()
@@ -100,6 +99,8 @@ class TableInfo(object):
         Parameters:
             - sqlDb: SqlInfo: the SQL Database
             - tableName: string'''
+        #TODO: Check which definition is better (or use both)
+        self.isManyToMany = self.isManyToManyLoose
         meta = MetaData()
         self.sqlDb = sqlDb
         saTableMetadata = Table(tableName, meta)
@@ -215,16 +216,23 @@ class TableInfo(object):
         '''True if this table has foreign keys'''
         return len(self.fKeys) > 0
 
-    def isManyToMany(self):
+    def isManyToManyStrict(self):
         '''True if this table implements a many-to-many relationship.
         Definition used:
             - Referring two tables.
             - Primary key composed exclusively out of foreign keys
-            - There are no tables reffering to this table'''
-        #TODO: Better definition
+            - There are no tables referring to this table'''
         return len(self.refTables) == 2 and \
             len(listSubtract(self.pkCols.keys(), self.fKeysCols.keys())) == 0 \
             and len(self.depTables) == 0
+
+    def isManyToManyLoose(self):
+        '''True if this table implements a many-to-many relationship.
+        Definition used:
+            - Referring two tables.
+            - There are no tables referring to this table'''
+        return len(self.refTables) == 2 and \
+            len(self.depTables) == 0
 
     def asNodeInfo(self):
         '''Returns necessary info to create a node out of this table metadata.

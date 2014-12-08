@@ -1,6 +1,6 @@
 import string
 from py2neo import Graph, authenticate
-from py2neo import Node
+from py2neo import Node, Relationship
 from customexceptions import DbNotFoundException, DBInsufficientPrivileges
 from configman import getGraphDBUri, getGraphDBCredentials, DRY_RUN
 from configman import MANY_TO_MANY_AS_RELATION, LOG, PERIODIC_COMMIT_EVERY
@@ -11,7 +11,7 @@ class GraphProc(object):
     from SqlDbInfo and convert it to Neo4j entities.'''
 
     #Pattern of cypher statement to insert relations from csv files.
-    relStatementPat = """USING PERIODIC COMMIT %d
+    relStatementPat = """USING PERIODIC COMMIT %s
 LOAD CSV WITH HEADERS FROM 'file:%s' AS csvLine
 MATCH (src:%s { %s}),(dest:%s { %s})
 CREATE (src)-[:%s%s]->(dest)"""
@@ -21,7 +21,8 @@ CREATE (src)-[:%s%s]->(dest)"""
         graphDbUrl = getGraphDBUri()
         graphDbCredentials = getGraphDBCredentials()
         self.graphDb = getTestedNeo4jDB(graphDbUrl, graphDbCredentials)
-        self.periodicCommit = PERIODIC_COMMIT_EVERY
+        self.periodicCommit = PERIODIC_COMMIT_EVERY if PERIODIC_COMMIT_EVERY \
+                                else ""
 
     def cypher_exec(self, statement):
         '''Wrapper to cypher.execute.'''
@@ -43,8 +44,8 @@ CREATE (src)-[:%s%s]->(dest)"""
             createClause = "CREATE (n:%s { %s})" % (tableObj.labelName,
                                                     colClause)
             for f in tableObj.filesWritten:
-                periodicCommitClause = "USING PERIODIC COMMIT %d " % \
-                                    self.periodicCommit
+                periodicCommitClause = "USING PERIODIC COMMIT %s " \
+                                        % self.periodicCommit
                 importClause = "LOAD CSV WITH HEADERS " + \
                 "FROM 'file:%s' AS csvLine " % f
                 cypherQuery = periodicCommitClause + importClause + \
@@ -158,8 +159,10 @@ def getTestedNeo4jDB(graphDBurl, graphDbCredentials):
         if graphDbCredentials:
             authenticate(*graphDbCredentials)
         graphDb = Graph(graphDBurl)
+        #just fetch a Node to check we are connected
+        #even in DRY RUN we should check Neo4j connectivity
+        _ = iter(graphDb.match(limit=1)).next()
     except Exception as ex:
-        #TODO: This never raised when it ran with Neo4j down.
         raise DbNotFoundException(ex, "Could not connect to Graph DB %s."
                                   % graphDBurl)
 
@@ -173,3 +176,29 @@ def getTestedNeo4jDB(graphDBurl, graphDbCredentials):
                     "Failed on trivial operations in DB %s." % graphDBurl)
 
     return graphDb
+
+
+def createModelGraph(sqlDb, graphDb):
+    tableNodes = dict()
+    for t in sqlDb.tableList:
+        r = t.asNodeInfo()
+        if r:
+            labels, properties = r
+            tableNodes[t.labelName] = Node(*labels, **properties)
+    if not DRY_RUN:
+        graphDb.graphDb.create(*tableNodes.values())
+    relations = list()
+    for t in sqlDb.tableList:
+        r = t.asRelInfo()
+        if r:
+            src, relType, dest, properties = r
+            relations.append(Relationship(tableNodes[src], relType,
+                                          tableNodes[dest], **properties))
+        for fk in t.fKeys:
+            r = fk.asRelInfo()
+            if r:
+                src, relType, dest, properties = r
+            relations.append(Relationship(tableNodes[src], relType,
+                                          tableNodes[dest], **properties))
+    if not DRY_RUN:
+        graphDb.graphDb.create(*relations)

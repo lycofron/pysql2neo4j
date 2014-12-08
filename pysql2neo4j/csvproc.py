@@ -30,7 +30,7 @@ class CsvHandler(object):
 
     def _getWriter(self):
         ''''Open a new file to write.'''
-        #MAYBE: Check if file exists
+        #Existing files will be overwritten
         self._csvFileName = path.join(self._csvdir,
                                    self._name + "%d.csv" %
                                    self._volumeNo)

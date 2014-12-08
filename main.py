@@ -8,9 +8,8 @@ Created on 24 Apr 2013
 ##this is just a code testing playground.
 
 from pysql2neo4j.rdbmsproc import SqlDbInfo
-from pysql2neo4j.graph import GraphProc
+from pysql2neo4j.graph import GraphProc, createModelGraph
 from pysql2neo4j.configman import LOG, DRY_RUN
-from py2neo import Node, Relationship
 ### Detailed output
 # from py2neo import watch
 # watch("httpstream")
@@ -47,31 +46,9 @@ if __name__ == '__main__':
             graphDb.createRelations(t)
 
         #Step 5: Courtesy representation of graph model :)
-        #TODO: No, really, this should be somewhere else
-        tableNodes = dict()
-        for t in sqlDb.tableList:
-            r = t.asNodeInfo()
-            if r:
-                labels, properties = r
-                tableNodes[t.labelName] = Node(*labels, **properties)
-        if not DRY_RUN:
-            graphDb.graphDb.create(*tableNodes.values())
-        relations = list()
-        for t in sqlDb.tableList:
-            r = t.asRelInfo()
-            if r:
-                src, relType, dest, properties = r
-                relations.append(Relationship(tableNodes[src], relType,
-                                              tableNodes[dest], **properties))
-            for fk in t.fKeys:
-                r = fk.asRelInfo()
-                if r:
-                    src, relType, dest, properties = r
-                relations.append(Relationship(tableNodes[src], relType,
-                                              tableNodes[dest], **properties))
-        if not DRY_RUN:
-            graphDb.graphDb.create(*relations)
+        createModelGraph(sqlDb, graphDb)
 
         LOG.info("Terminated")
     except:
-        LOG.exception("Terminated abnormally")
+        LOG.exception("Unexpected condition!")
+        LOG.critical("Terminated abnormally")
