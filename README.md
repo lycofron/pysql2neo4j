@@ -26,10 +26,6 @@ So, here it is. This script is meant to extract an SQL database and migrate its 
 
 (Well, I understand that the aforementioned requirements leave out approximately 95% of Real World databases :) )
 
-### Dry run
-
-By default, the script will only simulate the process and will not perform any changes. To perform changes, you need to set the flag "dry_run" on settings.ini to 0.
-
 ### What it does (in brief):
 
  * sqlalchemy inspects the database and gets schema information
@@ -60,6 +56,23 @@ In the process, the script does the following changes (all of them being default
  - It removes redundant fields i.e. fields that (1) are part of a foreign key and (2) do not participate in a primary key
  - Tables implementing a many-to-many relationship are not imported as nodes but as relationships. Non-redundant fields of these tables become relationship properties.
 
+### USAGE
+
+You need to edit file settings.ini before running main.py. Parameter documentation is provided in the file.
+
+### Dry run
+
+By default, the script will only simulate the process and will not perform any changes. To perform changes, you need to set the flag "dry_run" on settings.ini to 0.
+
+### Offline mode
+
+In offline mode, the script will not import any data to Neo4j, not even try to communicate with it. It will only export the csv files plus a cypher script to import them. This way, you may copy these files to another machine and do the import. As the script is in Cypher, the target machine needs nothing but Neo4j installed. *Note that, in that case, it is better to specify the directory where these files will be on the target machine (there is an option for that in settings.ini).*
+
+### Data type support
+ - LOBs are not supported by Neo4j and, thus, not supported by the script at the moment.
+ - All other standard sql types are supported.
+ - Vendor-specific data types (e.g. SMALLMONEY, INTERVAL etc.) are, in theory, supported, but *no tests have been performed. If you encounter such types, please provide feedback.*
+
 ### Tests so far
 
 So far, the script has migrated:
@@ -72,10 +85,6 @@ So far, the script has migrated:
  - _User edit mode_: output a file describing the actions that will be performed (maybe in YAML format) that can be modified by the user. That way, the user will be able to rename relationship ACTOR\_FILM to PLAYS\_IN
  - _Some way to handle LOBs_: maybe save LOBs as binary files and store the file's URI as string.
  - ... ?
-
-### USAGE
-
-You need to edit file settings.ini before running main.py. Parameter documentation is provided in the file.
 
 ### LICENSE
 ---
