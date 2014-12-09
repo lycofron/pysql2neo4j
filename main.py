@@ -4,16 +4,9 @@ Created on 24 Apr 2013
 @author: theodojo
 '''
 
-##Yeah, this has nothing to do with the rest of the code
-##this is just a code testing playground.
-
 from pysql2neo4j.rdbmsproc import SqlDbInfo
 from pysql2neo4j.graph import GraphProc, createModelGraph
 from pysql2neo4j.configman import LOG, DRY_RUN, OFFLINE_MODE
-### Detailed output
-# from py2neo import watch
-# watch("httpstream")
-
 
 if __name__ == '__main__':
     try:
