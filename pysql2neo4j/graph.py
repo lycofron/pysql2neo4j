@@ -4,7 +4,18 @@ from py2neo import Node, Relationship
 from customexceptions import DbNotFoundException, DBInsufficientPrivileges
 from configman import getGraphDBUri, getGraphDBCredentials, DRY_RUN
 from configman import MANY_TO_MANY_AS_RELATION, LOG, PERIODIC_COMMIT_EVERY
+from configman import OFFLINE_MODE, TARGET_CSV_DIRECTORY, CYPHER_STREAM
 from py2neo.packages.httpstream.http import SocketError
+from os import path
+from pysql2neo4j.utils import fixPath
+
+
+def getTargetFilename(filePath):
+    if OFFLINE_MODE:
+        _, fileName = path.split(filePath)
+        return fixPath(path.join(TARGET_CSV_DIRECTORY, fileName))
+    else:
+        return filePath
 
 
 class GraphProc(object):
@@ -25,10 +36,16 @@ CREATE (src)-[:%s%s]->(dest)"""
         self.periodicCommit = PERIODIC_COMMIT_EVERY if PERIODIC_COMMIT_EVERY \
                                 else ""
 
+    def __del__(self):
+        CYPHER_STREAM.__del__()
+
     def cypher_exec(self, statement):
         '''Wrapper to cypher.execute.'''
         if not DRY_RUN:
-            self.graphDb.cypher.execute(statement)
+            if OFFLINE_MODE:
+                CYPHER_STREAM.write(statement)
+            else:
+                self.graphDb.cypher.execute(statement)
 
     def importTableCsv(self, tableObj):
         '''Imports a table to Neo4j.'''
@@ -47,8 +64,9 @@ CREATE (src)-[:%s%s]->(dest)"""
             for f in tableObj.filesWritten:
                 periodicCommitClause = "USING PERIODIC COMMIT %s " \
                                         % self.periodicCommit
+                targetFileName = getTargetFilename(f)
                 importClause = "LOAD CSV WITH HEADERS " + \
-                "FROM 'file:%s' AS csvLine " % f
+                "FROM 'file:%s' AS csvLine " % targetFileName
                 cypherQuery = periodicCommitClause + importClause + \
                                 createClause
                 self.cypher_exec(cypherQuery)
@@ -109,8 +127,9 @@ CREATE (src)-[:%s%s]->(dest)"""
         LOG.info("Foreign key to table %s..." % pkLabel)
         #Emit one statement per file written
         for filename in fKey.table.filesWritten:
+            targetFileName = getTargetFilename(filename)
             statement = self.relStatementPat % (self.periodicCommit,
-                                                filename, pkLabel,
+                                                targetFileName, pkLabel,
                                                 pkCols, fkLabel,
                                                 fkCols, relType, "")
             LOG.debug(statement)
@@ -145,8 +164,9 @@ CREATE (src)-[:%s%s]->(dest)"""
         cols = ["%s: %s" % x for x in zip(colnames, colImpExpr)]
         colClause = "{%s}" % string.join(cols, ',') if cols else ""
         for filename in tableObj.filesWritten:
+            targetFileName = getTargetFilename(filename)
             statement = self.relStatementPat % (self.periodicCommit,
-                                                filename, pk2Label,
+                                                targetFileName, pk2Label,
                                                 pk2Cols, pk1Label,
                                                 pk1Cols, relType, colClause)
             LOG.debug(statement)
@@ -162,14 +182,16 @@ def getTestedNeo4jDB(graphDBurl, graphDbCredentials):
         graphDb = Graph(graphDBurl)
         #just fetch a Node to check we are connected
         #even in DRY RUN we should check Neo4j connectivity
-        _ = iter(graphDb.match(limit=1)).next()
+        #but not in OFFLINE MODE
+        if not OFFLINE_MODE:
+            _ = iter(graphDb.match(limit=1)).next()
     except StopIteration:
         pass
     except SocketError as ex:
         raise DbNotFoundException(ex, "Could not connect to Graph DB %s."
                                   % graphDBurl)
 
-    if not DRY_RUN:
+    if not DRY_RUN and not OFFLINE_MODE:
         try:
             test_node = Node("TEST", data="whatever")
             graphDb.create(test_node)
@@ -181,6 +203,41 @@ def getTestedNeo4jDB(graphDBurl, graphDbCredentials):
     return graphDb
 
 
+def getNodeSpec(labels, properties):
+    labelsString = string.join(iter(labels), ":") or ""
+    propertiesString = string.join(["%s:'%s'" % p for p in \
+                                   properties.items()], ",")
+    nodeSpec = labelsString
+    if propertiesString:
+        nodeSpec = labelsString + "{%s}" % propertiesString
+    return nodeSpec
+
+
+def createNodeCypher(node):
+    '''Returns a cypher statement to create a node '''
+    nodeSpec = getNodeSpec(node.labels, node.properties)
+    return "CREATE (a:%s)" % nodeSpec
+
+
+def createRelTablesCypher(rel):
+    '''Returns a cypher statement to create a relationshipx
+    between nodes that represent a table.'''
+    src = rel.start_node
+    dest = rel.end_node
+    srcMatchProps = {"__tablename": src.properties["__tablename"]}
+    destMatchProps = {"__tablename": dest.properties["__tablename"]}
+    nodeSpecSrc = getNodeSpec(rel.start_node.labels, srcMatchProps)
+    nodeSpecDest = getNodeSpec(rel.end_node.labels, destMatchProps)
+    propertiesString = string.join(["`%s`:'%s'" % p for p in \
+                                   rel.properties.items()], ",")
+    relSpec = rel.type
+    if propertiesString:
+        relSpec = relSpec + "{%s}" % propertiesString
+    return "MATCH (a:%s), (b:%s) CREATE (a)-[r:%s]->(b)" % (nodeSpecSrc, \
+                                                          nodeSpecDest, \
+                                                          relSpec)
+
+
 def createModelGraph(sqlDb, graphDb):
     tableNodes = dict()
     for t in sqlDb.tableList:
@@ -189,7 +246,11 @@ def createModelGraph(sqlDb, graphDb):
             labels, properties = r
             tableNodes[t.labelName] = Node(*labels, **properties)
     if not DRY_RUN:
-        graphDb.graphDb.create(*tableNodes.values())
+        if OFFLINE_MODE:
+            for node in tableNodes.values():
+                CYPHER_STREAM.write(createNodeCypher(node))
+        else:
+            graphDb.graphDb.create(*tableNodes.values())
     relations = list()
     for t in sqlDb.tableList:
         r = t.asRelInfo()
@@ -204,4 +265,8 @@ def createModelGraph(sqlDb, graphDb):
             relations.append(Relationship(tableNodes[src], relType,
                                           tableNodes[dest], **properties))
     if not DRY_RUN:
-        graphDb.graphDb.create(*relations)
+        if OFFLINE_MODE:
+            for rel in relations:
+                CYPHER_STREAM.write(createRelTablesCypher(rel))
+        else:
+            graphDb.graphDb.create(*relations)

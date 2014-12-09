@@ -9,12 +9,14 @@ import logging
 import os.path
 from sqlalchemy.engine import url
 from urlparse import urlunparse
+from pysql2neo4j.utils import fixPath
 
 #meta-configuration
 __CONFIGFILE = "settings.ini"
 __GLOBALSECTION = 'GLOBAL'
 __SQLDBSECTION = 'SQL_DB'
 __GRAPHDBSECTION = 'GRAPH_DB'
+__OFFLINESECTION = 'OFFLINE_MODE'
 __STANDARD_OPTIONS = ["driver", "host", "port", "schema", "user", "password"]
 __LOG_LEVEL_OPTIONS = {'DEBUG': logging.DEBUG, \
                        'INFO': logging.INFO, \
@@ -83,6 +85,33 @@ except (ConfigParser.NoOptionError, ValueError):
     _dry_run = 1
 
 DRY_RUN = _dry_run != 0
+
+try:
+    OFFLINE_MODE = \
+        __config.getint(__OFFLINESECTION, "offline_mode")
+except (ConfigParser.NoOptionError, ValueError):
+    OFFLINE_MODE = False
+
+if OFFLINE_MODE:
+    try:
+        _cypher_script_path =\
+            __config.get(__OFFLINESECTION, "cypher_script_path")
+    except ConfigParser.NoOptionError:
+        _cypher_script_path = CSV_DIRECTORY
+    try:
+        _cypher_script_name =\
+            __config.get(__OFFLINESECTION, "cypher_script_name")
+    except ConfigParser.NoOptionError:
+        _cypher_script_name = "import.cql"
+    CYPHER_SCRIPT_PATH = os.path.join(_cypher_script_path, \
+                                       _cypher_script_name)
+    try:
+        TARGET_CSV_DIRECTORY =\
+            __config.get(__OFFLINESECTION, "target_csv_directory")
+    except ConfigParser.NoOptionError:
+        TARGET_CSV_DIRECTORY = CSV_DIRECTORY
+else:
+    TARGET_CSV_DIRECTORY = CSV_DIRECTORY
 
 #Optional, default ALLCAPS
 try:
@@ -153,3 +182,21 @@ def getGraphDBCredentials():
         return (netLoc, user, password)
     else:
         return None
+
+
+class CypherScript(object):
+    '''Just a wrapper around a file stream to support offline mode.'''
+
+    def __init__(self):
+        if OFFLINE_MODE and (not DRY_RUN):
+            self._stream = open(CYPHER_SCRIPT_PATH, "w")
+
+    def __del__(self):
+        if OFFLINE_MODE and (not DRY_RUN) and (not self._stream.closed):
+            self._stream.flush()
+            self._stream.close()
+
+    def write(self, line):
+        self._stream.write(unicode.rstrip(line, ";\n") + ";\n")
+
+CYPHER_STREAM = CypherScript()
