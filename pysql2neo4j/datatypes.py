@@ -5,16 +5,31 @@ Created on 1 Dec 2014
 '''
 
 from sqlalchemy.sql import sqltypes
+from sqlalchemy.dialects import mysql, oracle, mssql, sybase, postgresql
 from utils import getUnixTime, getSubclassesDeep
 
 
-#TODO: add dialect-specific data types
-stringTypes = [sqltypes.String]
-integerTypes = [sqltypes.Integer]
-floatTypes = [sqltypes.Numeric]
+#NOTE: Feedback is needed for vendor-specific data types
+stringTypes = [sqltypes.String, oracle.base.ROWID, oracle.base.INTERVAL,
+               mssql.base.UNIQUEIDENTIFIER, postgresql.base.UUID,
+               sybase.base.UNIQUEIDENTIFIER, postgresql.base.INET,
+               postgresql.base.CIDR, postgresql.base.MACADDR,
+               postgresql.base.ARRAY, postgresql.json.JSON,
+               postgresql.ranges.INT4RANGE, postgresql.ranges.INT8RANGE,
+               postgresql.ranges.NUMRANGE, postgresql.ranges.DATERANGE,
+               postgresql.ranges.TSRANGE, postgresql.ranges.TSTZRANGE,
+               postgresql.base.INTERVAL, postgresql.base.TSVECTOR,
+               postgresql.HSTORE]
+integerTypes = [sqltypes.Integer, mysql.base.YEAR, mssql.base.DATETIMEOFFSET,
+                postgresql.base.OID]
+floatTypes = [sqltypes.Numeric, mssql.base.MONEY, mssql.base.SMALLMONEY,
+              sybase.base.MONEY, sybase.base.SMALLMONEY]
 dateTypes = [sqltypes.DateTime, sqltypes.Date, sqltypes.Time]
-booleanTypes = [sqltypes.Boolean]
-lobTypes = [sqltypes.LargeBinary, sqltypes.BINARY, sqltypes.VARBINARY]
+booleanTypes = [sqltypes.Boolean, mysql.base.BIT, mssql.base.BIT,
+                postgresql.base.BIT, sybase.base.BIT]
+lobTypes = [sqltypes.LargeBinary, sqltypes.BINARY, sqltypes.VARBINARY,
+            mysql.base.TINYBLOB, mysql.base.MEDIUMBLOB,
+            mysql.base.LONGBLOB, oracle.base.RAW, mssql.base.SQL_VARIANT]
 
 
 class sqlTypeHandler(object):
