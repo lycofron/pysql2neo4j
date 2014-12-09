@@ -48,9 +48,7 @@ if __name__ == '__main__':
             graphDb.createRelations(t)
 
         #Step 5: Courtesy representation of graph model :)
-        #Currently not supported in offline mode
-        if not OFFLINE_MODE:
-            createModelGraph(sqlDb, graphDb)
+        createModelGraph(sqlDb, graphDb)
 
         LOG.info("Terminated")
     except:

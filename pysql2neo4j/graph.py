@@ -203,6 +203,41 @@ def getTestedNeo4jDB(graphDBurl, graphDbCredentials):
     return graphDb
 
 
+def getNodeSpec(labels, properties):
+    labelsString = string.join(iter(labels), ":") or ""
+    propertiesString = string.join(["%s:'%s'" % p for p in \
+                                   properties.items()], ",")
+    nodeSpec = labelsString
+    if propertiesString:
+        nodeSpec = labelsString + "{%s}" % propertiesString
+    return nodeSpec
+
+
+def createNodeCypher(node):
+    '''Returns a cypher statement to create a node '''
+    nodeSpec = getNodeSpec(node.labels, node.properties)
+    return "CREATE (a:%s)" % nodeSpec
+
+
+def createRelTablesCypher(rel):
+    '''Returns a cypher statement to create a relationshipx
+    between nodes that represent a table.'''
+    src = rel.start_node
+    dest = rel.end_node
+    srcMatchProps = {"__tablename": src.properties["__tablename"]}
+    destMatchProps = {"__tablename": dest.properties["__tablename"]}
+    nodeSpecSrc = getNodeSpec(rel.start_node.labels, srcMatchProps)
+    nodeSpecDest = getNodeSpec(rel.end_node.labels, destMatchProps)
+    propertiesString = string.join(["`%s`:'%s'" % p for p in \
+                                   rel.properties.items()], ",")
+    relSpec = rel.type
+    if propertiesString:
+        relSpec = relSpec + "{%s}" % propertiesString
+    return "MATCH (a:%s), (b:%s) CREATE (a)-[r:%s]->(b)" % (nodeSpecSrc, \
+                                                          nodeSpecDest, \
+                                                          relSpec)
+
+
 def createModelGraph(sqlDb, graphDb):
     tableNodes = dict()
     for t in sqlDb.tableList:
@@ -212,7 +247,8 @@ def createModelGraph(sqlDb, graphDb):
             tableNodes[t.labelName] = Node(*labels, **properties)
     if not DRY_RUN:
         if OFFLINE_MODE:
-            pass
+            for node in tableNodes.values():
+                CYPHER_STREAM.write(createNodeCypher(node))
         else:
             graphDb.graphDb.create(*tableNodes.values())
     relations = list()
@@ -229,4 +265,8 @@ def createModelGraph(sqlDb, graphDb):
             relations.append(Relationship(tableNodes[src], relType,
                                           tableNodes[dest], **properties))
     if not DRY_RUN:
-        graphDb.graphDb.create(*relations)
+        if OFFLINE_MODE:
+            for rel in relations:
+                CYPHER_STREAM.write(createRelTablesCypher(rel))
+        else:
+            graphDb.graphDb.create(*relations)
