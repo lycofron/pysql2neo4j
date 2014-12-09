@@ -4,14 +4,18 @@ from py2neo import Node, Relationship
 from customexceptions import DbNotFoundException, DBInsufficientPrivileges
 from configman import getGraphDBUri, getGraphDBCredentials, DRY_RUN
 from configman import MANY_TO_MANY_AS_RELATION, LOG, PERIODIC_COMMIT_EVERY
-from configman import OFFLINE_MODE, _cypher_script_path
+from configman import OFFLINE_MODE, TARGET_CSV_DIRECTORY, CYPHER_STREAM
 from py2neo.packages.httpstream.http import SocketError
-from os import devnull
-from pysql2neo4j.configman import CYPHER_FILESTREAM
+from os import path
+from pysql2neo4j.utils import fixPath
 
-_cypher_stream = devnull
-if OFFLINE_MODE and not DRY_RUN:
-    _cypher_stream = open(_cypher_script_path, "w")
+
+def getTargetFilename(filePath):
+    if OFFLINE_MODE:
+        _, fileName = path.split(filePath)
+        return fixPath(path.join(TARGET_CSV_DIRECTORY, fileName))
+    else:
+        return filePath
 
 
 class GraphProc(object):
@@ -33,13 +37,13 @@ CREATE (src)-[:%s%s]->(dest)"""
                                 else ""
 
     def __del__(self):
-        _cypher_stream.close()
+        CYPHER_STREAM.__del__()
 
     def cypher_exec(self, statement):
         '''Wrapper to cypher.execute.'''
         if not DRY_RUN:
             if OFFLINE_MODE:
-                CYPHER_FILESTREAM.write(statement)
+                CYPHER_STREAM.write(statement)
             else:
                 self.graphDb.cypher.execute(statement)
 
@@ -60,8 +64,9 @@ CREATE (src)-[:%s%s]->(dest)"""
             for f in tableObj.filesWritten:
                 periodicCommitClause = "USING PERIODIC COMMIT %s " \
                                         % self.periodicCommit
+                targetFileName = getTargetFilename(f)
                 importClause = "LOAD CSV WITH HEADERS " + \
-                "FROM 'file:%s' AS csvLine " % f
+                "FROM 'file:%s' AS csvLine " % targetFileName
                 cypherQuery = periodicCommitClause + importClause + \
                                 createClause
                 self.cypher_exec(cypherQuery)
@@ -122,8 +127,9 @@ CREATE (src)-[:%s%s]->(dest)"""
         LOG.info("Foreign key to table %s..." % pkLabel)
         #Emit one statement per file written
         for filename in fKey.table.filesWritten:
+            targetFileName = getTargetFilename(filename)
             statement = self.relStatementPat % (self.periodicCommit,
-                                                filename, pkLabel,
+                                                targetFileName, pkLabel,
                                                 pkCols, fkLabel,
                                                 fkCols, relType, "")
             LOG.debug(statement)
@@ -158,8 +164,9 @@ CREATE (src)-[:%s%s]->(dest)"""
         cols = ["%s: %s" % x for x in zip(colnames, colImpExpr)]
         colClause = "{%s}" % string.join(cols, ',') if cols else ""
         for filename in tableObj.filesWritten:
+            targetFileName = getTargetFilename(filename)
             statement = self.relStatementPat % (self.periodicCommit,
-                                                filename, pk2Label,
+                                                targetFileName, pk2Label,
                                                 pk2Cols, pk1Label,
                                                 pk1Cols, relType, colClause)
             LOG.debug(statement)

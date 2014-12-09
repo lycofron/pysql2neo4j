@@ -9,7 +9,7 @@ Created on 24 Apr 2013
 
 from pysql2neo4j.rdbmsproc import SqlDbInfo
 from pysql2neo4j.graph import GraphProc, createModelGraph
-from pysql2neo4j.configman import LOG, DRY_RUN, OFFLINE_MODE, CYPHER_FILESTREAM
+from pysql2neo4j.configman import LOG, DRY_RUN, OFFLINE_MODE
 ### Detailed output
 # from py2neo import watch
 # watch("httpstream")
@@ -57,4 +57,4 @@ if __name__ == '__main__':
         LOG.exception("Unexpected condition!")
         LOG.critical("Terminated abnormally")
     finally:
-        CYPHER_FILESTREAM.__del__()
+        graphDb.__del__()
