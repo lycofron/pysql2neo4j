@@ -1,0 +1,30 @@
+GLOBAL:
+  csv_directory: &id001 C:\Users\Developer\Documents\GitHub\pysql2neo4j\csvdir
+  csv_row_limit: '10000'
+  dry_run: true
+  label_transform: capitalize
+  log_level: INFO
+  many_to_many_as_relation: '1'
+  periodic_commit_every: null
+  relation_type_transform: allcaps
+  remove_redundant_fields: true
+GRAPH_DB:
+  host: localhost
+  password: null
+  path: db/data/
+  port: '7474'
+  user: null
+OFFLINE_MODE:
+  cypher_script_path: *id001
+  target_csv_directory: *id001
+  cypher_script_name: import.cql
+  offline_mode: false
+SQL_DB:
+  driver: mysql+mysqlconnector
+  host: localhost
+  password: '123456'
+  port: null
+  schema: sakila
+  user: sakilauser
+  charset: utf8
+
