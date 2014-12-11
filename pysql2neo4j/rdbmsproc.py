@@ -17,14 +17,14 @@ from utils import listUnique, listSubtract, listFlatten
 from customexceptions import DBInsufficientPrivileges, DbNotFoundException
 from customexceptions import DBUnreadableException
 from datatypes import getHandler
-from configman import getSqlDbUri, TRANSFORM_LABEL, TRANSFORM_REL_TYPES
-from configman import LOG, DRY_RUN, MANY_TO_MANY_AS_RELATION
-from configman import REMOVE_REDUNDANT_FIELDS
+import configman
+
+conf = configman.conf
 
 #Decide here what to do with relation types
 _transformRelTypes = lambda x: x
 
-if TRANSFORM_REL_TYPES == 'allcaps':
+if conf.TRANSFORM_REL_TYPES == 'allcaps':
     _transformRelTypes = string.upper
 
 
@@ -33,11 +33,11 @@ class SqlDbInfo(object):
 
     def __init__(self):
         '''Constructor'''
-        sqldburi = getSqlDbUri()
+        sqldburi = conf.getSqlDbUri()
         connection, inspector = getTestedSQLDatabase(sqldburi)
         self.connection = connection
         self.inspector = inspector
-        if TRANSFORM_LABEL == 'capitalize':
+        if conf.TRANSFORM_LABEL == 'capitalize':
             self.labelTransform = self.capitalize
         else:
             self.labelTransform = self.noTransform
@@ -79,7 +79,7 @@ class SqlDbInfo(object):
     def export(self):
         '''Export all tables'''
         for tblName, tblObject in self.tables.items():
-            LOG.info("Exporting %s..." % tblName)
+            conf.LOG.info("Exporting %s..." % tblName)
             tblObject.export()
 
     def capitalize(self, tableName):
@@ -147,7 +147,7 @@ class TableInfo(object):
                                  self.fKeys[1].refTable.labelName)
             #relType attribute is set ONLY for such tables
             self.relType = _transformRelTypes(relType)
-        if REMOVE_REDUNDANT_FIELDS:
+        if conf.REMOVE_REDUNDANT_FIELDS:
             self.importCols = {k: v for k, v in self.cols.items() \
                           if not v.isRedundant()}
         else:
@@ -177,14 +177,14 @@ class TableInfo(object):
                                     uniqColNames)
         self.uniqCols = [self.cols[x] for x in uniqColNames]
         #Redundant fields are excluded
-        if REMOVE_REDUNDANT_FIELDS:
+        if conf.REMOVE_REDUNDANT_FIELDS:
             self.idxCols = [self.cols[x] for x in idxColNames \
                             if not self.cols[x].isRedundant()]
         else:
             self.idxCols = [self.cols[x] for x in idxColNames]
-        LOG.debug("Unique constraints on table %s, columns %s" %
+        conf.LOG.debug("Unique constraints on table %s, columns %s" %
                   (self.tableName, str([x.name for x in self.uniqCols])))
-        LOG.debug("Indexes on table %s, columns %s" %
+        conf.LOG.debug("Indexes on table %s, columns %s" %
                   (self.tableName, str([x.name for x in self.idxCols])))
 
     def iterRows(self):
@@ -287,7 +287,7 @@ class ColumnInfo(object):
             - Belongs to a foreign key
             - Does not belong to table's primary key (not applicable to
             many-to-many tables)'''
-        if MANY_TO_MANY_AS_RELATION and self.table.isManyToMany():
+        if conf.MANY_TO_MANY_AS_RELATION and self.table.isManyToMany():
             return self.isFkCol
         else:
             return self.isFkCol and (not self.isPkCol)
@@ -352,7 +352,7 @@ def getTestedSQLDatabase(dburi, tryWrite=False):
     except Exception as ex:
         raise  DBUnreadableException(ex, "Could not SELECT on SQL DB %s."
                                      % dburi)
-    if not DRY_RUN:
+    if not conf.DRY_RUN:
         if tryWrite:
             try:
                 md = MetaData()

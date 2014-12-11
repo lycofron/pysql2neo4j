@@ -7,7 +7,7 @@ Created on 27 Nov 2014
 import unicodecsv as csv
 from os import path, devnull
 
-from configman import CSV_DIRECTORY, CSV_ROW_LIMIT, DRY_RUN
+from configman import conf
 from utils import fixPath
 
 
@@ -20,8 +20,8 @@ class CsvHandler(object):
     def __init__(self, name, header):
         '''Constructor.
         '''
-        self._csvdir = CSV_DIRECTORY
-        self._csvRowLimit = CSV_ROW_LIMIT
+        self._csvdir = conf.CSV_DIRECTORY
+        self._csvRowLimit = conf.CSV_ROW_LIMIT
         self._header = header
         self._name = name
         self._volumeNo = 1
@@ -34,7 +34,7 @@ class CsvHandler(object):
         self._csvFileName = path.join(self._csvdir,
                                    self._name + "%d.csv" %
                                    self._volumeNo)
-        if DRY_RUN:
+        if conf.DRY_RUN:
             self._csvFile = open(devnull, "wb")
         else:
             self._csvFile = open(self._csvFileName, "wb")

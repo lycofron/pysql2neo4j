@@ -2,18 +2,18 @@ import string
 from py2neo import Graph, authenticate
 from py2neo import Node, Relationship
 from customexceptions import DbNotFoundException, DBInsufficientPrivileges
-from configman import getGraphDBUri, getGraphDBCredentials, DRY_RUN
-from configman import MANY_TO_MANY_AS_RELATION, LOG, PERIODIC_COMMIT_EVERY
-from configman import OFFLINE_MODE, TARGET_CSV_DIRECTORY, CYPHER_STREAM
+import configman
 from py2neo.packages.httpstream.http import SocketError
 from os import path
 from pysql2neo4j.utils import fixPath
 
+conf = configman.conf
+
 
 def getTargetFilename(filePath):
-    if OFFLINE_MODE:
+    if conf.OFFLINE_MODE:
         _, fileName = path.split(filePath)
-        return fixPath(path.join(TARGET_CSV_DIRECTORY, fileName))
+        return fixPath(path.join(conf.TARGET_CSV_DIRECTORY, fileName))
     else:
         return filePath
 
@@ -30,29 +30,30 @@ CREATE (src)-[:%s%s]->(dest)"""
 
     def __init__(self):
         '''Constructor'''
-        graphDbUrl = getGraphDBUri()
-        graphDbCredentials = getGraphDBCredentials()
+        graphDbUrl = conf.getGraphDBUri()
+        graphDbCredentials = conf.getGraphDBCredentials()
         self.graphDb = getTestedNeo4jDB(graphDbUrl, graphDbCredentials)
-        self.periodicCommit = PERIODIC_COMMIT_EVERY if PERIODIC_COMMIT_EVERY \
-                                else ""
+        self.periodicCommit = conf.PERIODIC_COMMIT_EVERY \
+                              if conf.PERIODIC_COMMIT_EVERY \
+                              else ""
 
     def __del__(self):
-        CYPHER_STREAM.__del__()
+        conf.CYPHER_STREAM.__del__()
 
     def cypher_exec(self, statement):
         '''Wrapper to cypher.execute.'''
-        if not DRY_RUN:
-            if OFFLINE_MODE:
-                CYPHER_STREAM.write(statement)
+        if not conf.DRY_RUN:
+            if conf.OFFLINE_MODE:
+                conf.CYPHER_STREAM.write(statement)
             else:
                 self.graphDb.cypher.execute(statement)
 
     def importTableCsv(self, tableObj):
         '''Imports a table to Neo4j.'''
         if not (tableObj.isManyToMany() \
-           and MANY_TO_MANY_AS_RELATION):
+           and conf.MANY_TO_MANY_AS_RELATION):
             #Standard table import
-            LOG.info("Importing %s..." % tableObj.labelName)
+            conf.LOG.info("Importing %s..." % tableObj.labelName)
             #Match column names with their respective import expression
             colnames = [x for x in tableObj.importCols.keys()]
             colImpExpr = [col.impFunc("csvLine.%s") % name
@@ -72,30 +73,31 @@ CREATE (src)-[:%s%s]->(dest)"""
                 self.cypher_exec(cypherQuery)
         else:
             #Not necessary to import many-to-many tables. So don't.
-            LOG.info("Skipping many-to-many table %s..." % tableObj.labelName)
+            conf.LOG.info("Skipping many-to-many table %s..." %
+                          tableObj.labelName)
 
     def createConstraints(self, tableObj):
         '''Creates unique constraints on Neo4j.'''
         label = tableObj.labelName
-        LOG.info("Creating constraint on %s..." % tableObj.labelName)
+        conf.LOG.info("Creating constraint on %s..." % tableObj.labelName)
         for col in tableObj.uniqCols:
             statement = """create constraint on (n:%s)
             assert n.%s is unique""" % (label, col.name)
-            LOG.debug(statement)
+            conf.LOG.debug(statement)
             self.cypher_exec(statement)
 
     def createIndexes(self, tableObj):
         '''Creates indexes on Neo4j.'''
         label = tableObj.labelName
-        LOG.info("Creating indexes on %s..." % label)
+        conf.LOG.info("Creating indexes on %s..." % label)
         for col in tableObj.idxCols:
             statement = "create index on :%s(%s)" % (label, col.name)
-            LOG.debug(statement)
+            conf.LOG.debug(statement)
             self.cypher_exec(statement)
 
     def createRelations(self, tableObj):
         '''Wrapper, basically. Chooses import process to follow'''
-        if MANY_TO_MANY_AS_RELATION and (not tableObj.isManyToMany()):
+        if conf.MANY_TO_MANY_AS_RELATION and (not tableObj.isManyToMany()):
             #For standard table, import its foreign keys
             for fk in tableObj.fKeys:
                 self.createRelationsFk(fk)
@@ -124,7 +126,7 @@ CREATE (src)-[:%s%s]->(dest)"""
         pkCols = string.join(["%s: %s" % tup
                                      for tup in pkColsImportExpr], ",")
         relType = fKey.relType
-        LOG.info("Foreign key to table %s..." % pkLabel)
+        conf.LOG.info("Foreign key to table %s..." % pkLabel)
         #Emit one statement per file written
         for filename in fKey.table.filesWritten:
             targetFileName = getTargetFilename(filename)
@@ -132,7 +134,7 @@ CREATE (src)-[:%s%s]->(dest)"""
                                                 targetFileName, pkLabel,
                                                 pkCols, fkLabel,
                                                 fkCols, relType, "")
-            LOG.debug(statement)
+            conf.LOG.debug(statement)
             self.cypher_exec(statement)
 
     def manyToManyRelations(self, tableObj):
@@ -156,7 +158,7 @@ CREATE (src)-[:%s%s]->(dest)"""
                                      for tup in pk2ColsImportExpr], ",")
         assert hasattr(tableObj, 'relType')
         relType = tableObj.relType
-        LOG.info("Importing many-to-many table %s as relationships..." %
+        conf.LOG.info("Importing many-to-many table %s as relationships..." %
                  tableObj.tableName)
         colnames = [x for x in tableObj.importCols.keys()]
         colImpExpr = [col.impFunc("csvLine.%s") % name
@@ -169,7 +171,7 @@ CREATE (src)-[:%s%s]->(dest)"""
                                                 targetFileName, pk2Label,
                                                 pk2Cols, pk1Label,
                                                 pk1Cols, relType, colClause)
-            LOG.debug(statement)
+            conf.LOG.debug(statement)
             self.cypher_exec(statement)
 
 
@@ -183,7 +185,7 @@ def getTestedNeo4jDB(graphDBurl, graphDbCredentials):
         #just fetch a Node to check we are connected
         #even in DRY RUN we should check Neo4j connectivity
         #but not in OFFLINE MODE
-        if not OFFLINE_MODE:
+        if not conf.OFFLINE_MODE:
             _ = iter(graphDb.match(limit=1)).next()
     except StopIteration:
         pass
@@ -191,7 +193,7 @@ def getTestedNeo4jDB(graphDBurl, graphDbCredentials):
         raise DbNotFoundException(ex, "Could not connect to Graph DB %s."
                                   % graphDBurl)
 
-    if not DRY_RUN and not OFFLINE_MODE:
+    if not conf.DRY_RUN and not conf.OFFLINE_MODE:
         try:
             test_node = Node("TEST", data="whatever")
             graphDb.create(test_node)
@@ -245,10 +247,10 @@ def createModelGraph(sqlDb, graphDb):
         if r:
             labels, properties = r
             tableNodes[t.labelName] = Node(*labels, **properties)
-    if not DRY_RUN:
-        if OFFLINE_MODE:
+    if not conf.DRY_RUN:
+        if conf.OFFLINE_MODE:
             for node in tableNodes.values():
-                CYPHER_STREAM.write(createNodeCypher(node))
+                conf.CYPHER_STREAM.write(createNodeCypher(node))
         else:
             graphDb.graphDb.create(*tableNodes.values())
     relations = list()
@@ -264,9 +266,9 @@ def createModelGraph(sqlDb, graphDb):
                 src, relType, dest, properties = r
             relations.append(Relationship(tableNodes[src], relType,
                                           tableNodes[dest], **properties))
-    if not DRY_RUN:
-        if OFFLINE_MODE:
+    if not conf.DRY_RUN:
+        if conf.OFFLINE_MODE:
             for rel in relations:
-                CYPHER_STREAM.write(createRelTablesCypher(rel))
+                conf.CYPHER_STREAM.write(createRelTablesCypher(rel))
         else:
             graphDb.graphDb.create(*relations)
