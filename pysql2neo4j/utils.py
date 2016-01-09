@@ -40,6 +40,8 @@ def listFlatten(seq):
 #Thanks http://stackoverflow.com/a/11111177/2822594
 def unix_time(dt):
     '''returns a timedelta from unix epoch'''
+    if type(dt) is datetime.date:
+        dt = datetime.datetime(dt.year, dt.month, dt.day)
     delta = dt - unixEpoch
     return delta.total_seconds()
 
